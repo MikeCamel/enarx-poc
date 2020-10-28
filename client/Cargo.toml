@@ -1,0 +1,50 @@
+[package]
+name = "enarx"
+version = "0.1.0"
+authors = ["Mike Bursell <mike@p2ptrust.org>"]
+license = "Apache-2.0"
+edition = "2018"
+#build = "build.rs"
+homepage = "https://github.com/enarx/enarx"
+repository = "https://github.com/enarx/enarx"
+description = "Enarx Client"
+#readme = "README.md"
+keywords = ["sgx", "sev", "kvm", "tee"]
+categories = ["os", "os::linux-apis", "network-programming", "hardware-support"]
+exclude = [ ".gitignore", ".github/*" ]
+include = [ "src", "internal" ]
+
+[badges]
+# See https://doc.rust-lang.org/cargo/reference/manifest.html#the-badges-section
+github = { repository = "enarx/enarx", workflow = "test" }
+#github = { repository = "enarx/enarx", workflow = "lint" }
+maintenance = { status = "actively-developed" }
+is-it-maintained-issue-resolution = { repository = "enarx/enarx" }
+is-it-maintained-open-issues = { repository = "enarx/enarx" }
+
+
+[dependencies]
+#wasmparser = "0.65"
+#structopt = "0.3"
+#tempfile = "3.1"
+#lebicon = "4.0"
+#codicon = "3.0"
+#walkdir = "2.3"
+#anyhow = "1.0"
+#tar = "0.4"
+
+koine = { path = "../koine" }
+#koine = { git = "https://github.com/enarx/koine" }
+uuid =  { version = "0.8", features = ["serde", "v4"] }#
+chrono = { version = "0.4.19", features = ["serde"] }
+reqwest = { version = "0.10.7", features = ["blocking", "json", "native-tls"] }
+rand = "0.7.3"
+
+tokio = { version = "0.2", features = ["macros"] }
+warp = { version = "0.2", features = ["tls"] }
+serde = "1.0"
+serde_cbor = "0.10"
+serde_json = "1.0"
+serde_derive = "1.0"
+cbor = { version = "0.4.1" }
+
