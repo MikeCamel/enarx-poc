@@ -39,6 +39,18 @@ pub enum Backend {
     Sgx,
     Kvm,
 }
+
+impl Backend {
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Backend::Nil => "Nil",
+            Backend::Sev => "Sev",
+            Backend::Sgx => "Sgx",
+            Backend::Kvm => "Kvm",
+        }
+    }
+}
+
 pub type KeepList = Arc<Mutex<Vec<Keep>>>;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -63,7 +75,7 @@ pub struct Wasmldr {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Keep {
-    pub backend: String,
+    pub backend: Backend,
     pub kuuid: Uuid,
     pub state: LoaderState,
     pub wasmldr: Option<Wasmldr>,
