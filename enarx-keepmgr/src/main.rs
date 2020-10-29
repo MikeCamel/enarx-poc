@@ -28,7 +28,7 @@ async fn main() {
     let available_backends = models::populate_available_backends().await;
 
     //Provide mechanism to find existing Keeps
-    let keeploaderlist = models::find_existing_keep_loaders().await;
+    let keeplist = models::find_existing_keep_loaders().await;
 
     let declare = warp::any().map(|| {
         format!(
@@ -41,7 +41,7 @@ async fn main() {
         .and(warp::path("keeps_post"))
         .and(warp::body::json())
         .and(filters::with_available_backends(available_backends))
-        .and(filters::with_keeploaderlist(keeploaderlist))
+        .and(filters::with_keeplist(keeplist))
         .and_then(filters::keeps_parse);
 
     let routes = keep_posts.or(declare);
@@ -71,15 +71,15 @@ mod models {
         available_backends
     }
 
-    pub type KeepLoaderList = Arc<Mutex<Vec<koine::Keep>>>;
+    pub type KeepList = Arc<Mutex<Vec<koine::Keep>>>;
 
-    pub fn new_empty_keeploaderlist() -> KeepLoaderList {
+    pub fn new_empty_keeplist() -> KeepList {
         Arc::new(Mutex::new(Vec::new()))
     }
-    pub async fn find_existing_keep_loaders() -> KeepLoaderList {
+    pub async fn find_existing_keep_loaders() -> KeepList {
         println!("Looking for existing keep-loaders in /tmp");
         //TODO - implement (scheme required)
-        new_empty_keeploaderlist()
+        new_empty_keeplist()
     }
 }
 
@@ -97,10 +97,10 @@ mod filters {
         warp::any().map(move || available_backends.clone())
     }
 
-    pub fn with_keeploaderlist(
-        keeploaderlist: KeepLoaderList,
-    ) -> impl Filter<Extract = (KeepLoaderList,), Error = std::convert::Infallible> + Clone {
-        warp::any().map(move || keeploaderlist.clone())
+    pub fn with_keeplist(
+        keeplist: KeepList,
+    ) -> impl Filter<Extract = (KeepList,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || keeplist.clone())
     }
 
     pub fn new_keep(
@@ -141,8 +141,8 @@ mod filters {
 
     pub async fn keeps_parse(
         command_group: HashMap<String, String>,
-        available_backends: Vec<String>,
-        keeploaderlist: KeepLoaderList,
+        available_backends: Vec<Backend>,
+        keeplist: KeepList,
     ) -> Result<impl warp::Reply, Infallible> {
         let undefined = UndefinedReply {
             text: String::from("undefined"),
@@ -156,7 +156,7 @@ mod filters {
                 //assume unsupported to start
                 let mut supported: bool = false;
                 println!("new-keep ...");
-                let authtoken = command_group.get(KEEP_AUTH).unwrap();
+                //FIXME - not a String!
                 let keeparch = command_group.get(KEEP_ARCH).unwrap().as_str();
                 //TODO - we need to get the listen address from the Keep later in the process
 
@@ -165,16 +165,16 @@ mod filters {
                 }
 
                 if supported {
-                    let mut kll = keeploaderlist.lock().await;
-                    let new_keeploader = new_keep(authtoken, 0, "", keeparch);
+                    let mut kll = keeplist.lock().await;
+                    let new_keep = new_keep(authtoken, 0, "", keeparch);
                     println!(
-                        "Keeploaderlist currently has {} entries, about to add {}",
+                        "Keeplist currently has {} entries, about to add {}",
                         kll.len(),
-                        new_keeploader.kuuid,
+                        new_keep.kuuid,
                     );
-                    //add this new new keeploader to the list
-                    kll.push(new_keeploader.clone());
-                    json_reply = warp::reply::json(&new_keeploader);
+                    //add this new new keep to the list
+                    kll.push(new_keep.clone());
+                    json_reply = warp::reply::json(&new_keep);
                 //TODO - deal with attestation via "stream"
                 } else {
                     json_reply = warp::reply::json(&"Unsupported backend".to_string());
@@ -182,17 +182,14 @@ mod filters {
             }
             "list-keeps" => {
                 //update list
-                let kll = keeploaderlist.lock().await;
+                let kll = keeplist.lock().await;
 
-                let kllvec: Vec<KeepLoader> = kll.clone().into_iter().collect();
-                for keeploader in &kllvec {
-                    println!(
-                        "Keep kuuid {}, listening on {}:{}",
-                        keeploader.kuuid, keeploader.bindaddress, keeploader.app_loader_bind_port
-                    );
+                let kllvec: Vec<Keep> = kll.clone().into_iter().collect();
+                for keep in &kllvec {
+                    println!("Keep kuuid {}", keep.kuuid);
                 }
-                let json_keeploadervec = KeepLoaderVec { klvec: kllvec };
-                json_reply = warp::reply::json(&json_keeploadervec);
+                let json_keepvec = KeepVec { klvec: kllvec };
+                json_reply = warp::reply::json(&json_keepvec);
             }
             &_ => {}
         }
