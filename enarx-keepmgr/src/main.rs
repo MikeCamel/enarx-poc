@@ -16,9 +16,7 @@
 
 #![deny(clippy::all)]
 
-extern crate serde_derive;
-
-use ::host_components::*;
+use koine::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use warp::Filter;
 
@@ -60,18 +58,20 @@ async fn main() {
 }
 
 mod models {
-    use ::host_components::*;
+    use koine::*;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
-    pub async fn populate_available_backends() -> Vec<String> {
+    pub async fn populate_available_backends() -> Vec<Backend> {
         let mut available_backends = Vec::new();
         //add backends - assume both KVM and Nil backends ("nil") are available
         //TODO - add checks for SEV and SGX
-        available_backends.push(KEEP_ARCH_NIL.to_string());
-        available_backends.push(KEEP_ARCH_KVM.to_string());
+        available_backends.push(Backend::Nil);
+        available_backends.push(Backend::Kvm);
         available_backends
     }
+
+    pub type KeepLoaderList = Arc<Mutex<Vec<koine::Keep>>>;
 
     pub fn new_empty_keeploaderlist() -> KeepLoaderList {
         Arc::new(Mutex::new(Vec::new()))
@@ -84,7 +84,7 @@ mod models {
 }
 
 mod filters {
-    use ::host_components::*;
+    use koine::*;
     use std::collections::HashMap;
     use std::convert::Infallible;
     use std::process::Command;
@@ -92,8 +92,8 @@ mod filters {
     use warp::Filter;
 
     pub fn with_available_backends(
-        available_backends: Vec<String>,
-    ) -> impl Filter<Extract = (Vec<String>,), Error = std::convert::Infallible> + Clone {
+        available_backends: Vec<Backend>,
+    ) -> impl Filter<Extract = (Vec<Backend>,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || available_backends.clone())
     }
 
@@ -108,7 +108,7 @@ mod filters {
         apploaderbindport: u16,
         _apploaderbindaddr: &str,
         backend: &str,
-    ) -> KeepLoader {
+    ) -> Keep {
         let new_kuuid = Uuid::new_v4();
         let bind_socket = format!("/tmp/enarx-keep-{}.sock", &new_kuuid);
         println!("Bind socket = {}", &bind_socket);
@@ -130,12 +130,12 @@ mod filters {
             authtoken, new_kuuid, apploaderbindport
         );
 
-        KeepLoader {
-            state: KEEP_LOADER_STATE_UNDEF,
-            kuuid: new_kuuid,
-            app_loader_bind_port: apploaderbindport,
-            bindaddress: "".to_string(),
+        Keep {
             backend: backend.to_string(),
+            kuuid: new_kuuid,
+            state: LoaderState::Indeterminate,
+            wasmldr: None,
+            human_readable_info: None,
         }
     }
 
@@ -187,11 +187,8 @@ mod filters {
                 let kllvec: Vec<KeepLoader> = kll.clone().into_iter().collect();
                 for keeploader in &kllvec {
                     println!(
-                        "Keep kuuid {}, state {}, listening on {}:{}",
-                        keeploader.kuuid,
-                        keeploader.state,
-                        keeploader.bindaddress,
-                        keeploader.app_loader_bind_port
+                        "Keep kuuid {}, listening on {}:{}",
+                        keeploader.kuuid, keeploader.bindaddress, keeploader.app_loader_bind_port
                     );
                 }
                 let json_keeploadervec = KeepLoaderVec { klvec: kllvec };

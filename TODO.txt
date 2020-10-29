@@ -1,13 +1,14 @@
-1. Make 3 workspaces (https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html)
-2. put koine in one
-3. put enarx-keepmgr in one
-4. put enarx-client in one
++ Make 3 workspaces (https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html)
++ put koine in one
++ put enarx-keepmgr in one
++ put enarx-client in one
 
-de-MIME Keep pieces - plain cbor
++ de-MIME Keep pieces - plain cbor
 share MIME work with Connor
 
-Change enarx-keepmgr to use Exec in enarx-keepldr
++ Change enarx-keepmgr to use Exec in enarx-keepldr
 Add systemd unit files to enarx-keepldr (new PR)
 Get enarx-client talking to enarx-keepmgr for a new keep
+Get test binary somewhere it can be accessed, and/or add absolute path
 Get enarx-keepmgr creating a new keep with enarx-keepldr
 Get enarx-keepmgr offering contracts

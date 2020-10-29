@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+	"client",
+	"enarx-keepmgr",
+	"koine",
+]
