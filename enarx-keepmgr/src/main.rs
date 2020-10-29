@@ -37,14 +37,14 @@ async fn main() {
         )
     });
 
-    let keep_posts = warp::post()
-        .and(warp::path("keeps_post"))
-        .and(warp::body::json())
+    let new_keep_post = warp::post()
+        .and(warp::path("new_keep"))
+        .and(warp::body::bytes())
         .and(filters::with_available_backends(available_backends))
         .and(filters::with_keeplist(keeplist))
-        .and_then(filters::keeps_parse);
+        .and_then(filters::new_keep_parse);
 
-    let routes = keep_posts.or(declare);
+    let routes = new_keep_post.or(declare);
     println!(
         "Starting server on {}, {} v{}",
         BIND_PORT, PROTO_NAME, PROTO_VERSION
@@ -103,17 +103,8 @@ mod filters {
         warp::any().map(move || keeplist.clone())
     }
 
-    pub fn new_keep(
-        authtoken: &str,
-        apploaderbindport: u16,
-        _apploaderbindaddr: &str,
-        backend: &str,
-    ) -> Keep {
+    pub fn new_keep(backend: &str) -> Keep {
         let new_kuuid = Uuid::new_v4();
-        let bind_socket = format!("/tmp/enarx-keep-{}.sock", &new_kuuid);
-        println!("Bind socket = {}", &bind_socket);
-
-        println!("Received auth_token {}", authtoken);
         println!("About to spawn new keep-loader");
         let service_cmd = format!("enarx-keep-{}@{}.service", backend, new_kuuid);
         println!("service_cmd = {}", new_kuuid);
@@ -126,29 +117,73 @@ mod filters {
 
         println!("Spawned new keep-loader");
         println!(
-            "Got this far with authtoken = {}, new_kuuid = {}, apploaderbindport = {}",
-            authtoken, new_kuuid, apploaderbindport
+            "Got this far with backend = {}, new_kuuid = {}",
+            backend, new_kuuid
         );
 
         Keep {
             backend: backend.to_string(),
             kuuid: new_kuuid,
-            state: LoaderState::Indeterminate,
+            state: LoaderState::Ready,
             wasmldr: None,
             human_readable_info: None,
         }
     }
 
-    pub async fn keeps_parse(
-        command_group: HashMap<String, String>,
+    pub async fn new_keep_parse(
+        cbor_response: Vec<u8>,
         available_backends: Vec<Backend>,
         keeplist: KeepList,
     ) -> Result<impl warp::Reply, Infallible> {
         let undefined = UndefinedReply {
             text: String::from("undefined"),
         };
+        //FIXME - we need a cbor-reply
         let mut json_reply = warp::reply::json(&undefined);
 
+        //assume unsupported to start
+        let mut supported: bool = false;
+        println!("new-keep ...");
+        //FIXME - not a String!
+        let keeparch = command_group.get(KEEP_ARCH).unwrap().as_str();
+        //TODO - we need to get the listen address from the Keep later in the process
+
+        if available_backends.iter().any(|backend| backend == keeparch) {
+            supported = true;
+        }
+
+        if supported {
+            let mut kll = keeplist.lock().await;
+            let new_keep = new_keep(keeparch);
+            println!(
+                "Keeplist currently has {} entries, about to add {}",
+                kll.len(),
+                new_keep.kuuid,
+            );
+            //add this new new keep to the list
+            kll.push(new_keep.clone());
+            json_reply = warp::reply::json(&new_keep);
+        //TODO - deal with attestation via "stream"
+        } else {
+            json_reply = warp::reply::json(&"Unsupported backend".to_string());
+        }
+        //FIXME - need a cbor reply!
+        Ok(json_reply)
+    }
+
+    //TODO - break this into different methods
+    pub async fn keeps_parse(
+        cbor_response: Vec<u8>,
+        available_backends: Vec<Backend>,
+        keeplist: KeepList,
+    ) -> Result<impl warp::Reply, Infallible> {
+        let undefined = UndefinedReply {
+            text: String::from("undefined"),
+        };
+        //FIXME - we need a cbor-reply
+        let mut json_reply = warp::reply::json(&undefined);
+
+        //FIXME - have different filters (based on path) - then you know what you have
         match command_group.get(KEEP_COMMAND).unwrap().as_str() {
             //TODO - list available IP addresses
             "list-keep-types" => json_reply = warp::reply::json(&available_backends),
@@ -166,7 +201,7 @@ mod filters {
 
                 if supported {
                     let mut kll = keeplist.lock().await;
-                    let new_keep = new_keep(authtoken, 0, "", keeparch);
+                    let new_keep = new_keep(keeparch);
                     println!(
                         "Keeplist currently has {} entries, about to add {}",
                         kll.len(),

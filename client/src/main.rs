@@ -17,62 +17,9 @@ use koine::*;
 //use serde_derive::{Deserialize, Serialize};
 //use reqwest::Body;
 use serde_cbor::{from_slice, to_vec};
-//use std::collections::HashMap;
+
 //use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 //use uuid::Uuid;
-/*
-pub const KEEP_ARCH_NIL: &str = "nil";
-
-//TODO - move to shared library
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KeepMgr {
-    pub ipaddr: String,
-    pub port: u16,
-}
-
-//TODO - move to shared library
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KeepContract {
-    pub keepmgr: KeepMgr,
-    pub backend: String,
-    //TODO - add duration of contract availability
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Wasmldr {
-    pub wasmldr_ipaddr: String,
-    pub wasmldr_port: u16,
-}
-
-//TODO - move to shread library?
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Keep {
-    pub keepmgr: KeepMgr,
-    pub backend: String,
-    pub kuuid: Uuid,
-    pub state: String,
-    pub wasmldr: Option<Wasmldr>,
-    pub human_readable_info: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KeepLoader {
-    pub state: u8,
-    pub kuuid: Uuid,
-    pub app_loader_bind_port: u16,
-    pub bindaddress: String,
-    pub backend: String,
-    //we may wish to add information here about whether we're happy to share
-    // all of this information with external parties, but since the keeploader
-    // is operating outside the TEE boundary, there's only so much we can do
-    // to keep this information confidential
-}
-
-pub struct Workload {
-    pub wasm_binary: Vec<u8>,
-    pub human_readable_info: String,
-}
-*/
 
 //currently only one Keep-Manager and one Keep supported
 fn main() {
@@ -130,7 +77,7 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
      */
     let keep_mgr_url = format!("https://{}:{}/keeps_post/", keepmgr.ipaddr, keepmgr.port);
 
-    let response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
+    let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()
         .unwrap()
@@ -139,9 +86,8 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
         .send()
         .expect("Problem starting keep");
 
-    //FIXME - we actually get a KeepLoader from this...
     //let keep: Keep = response.json().expect("TODO - error handling");
-    let keep = from_slice(&response.bytes().unwrap()).unwrap();
+    let keep = from_slice(&cbor_response.bytes().unwrap()).unwrap();
     Ok(keep)
 }
 
