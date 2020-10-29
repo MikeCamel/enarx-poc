@@ -11,7 +11,6 @@
 
 #![deny(clippy::all)]
 extern crate reqwest;
-extern crate serde_derive;
 
 use koine::*;
 
@@ -122,13 +121,7 @@ pub fn list_keepcontracts(_keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, Strin
 
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
     //TODO - cbor pass new-keep command
-    let mime_new_keep = MIMENewKeep {
-        //NOTE - auth_token not currently used
-        //FIXME - remove for now
-        auth_token: String::from(""),
-        keepcontract: keepcontract.clone(),
-    };
-    let cbor_msg = to_vec(&mime_new_keep);
+    let cbor_msg = to_vec(&keepcontract);
     /*
     let mut command_new_keep: HashMap<String, String> = HashMap::new();
     command_new_keep.insert("command".to_string(), "new-keep".to_string());
