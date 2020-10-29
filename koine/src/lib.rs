@@ -65,7 +65,7 @@ pub struct Wasmldr {
 pub struct Keep {
     pub backend: String,
     pub kuuid: Uuid,
-    pub state: String,
+    pub state: LoaderState,
     pub wasmldr: Option<Wasmldr>,
     pub human_readable_info: Option<String>,
 }
@@ -108,18 +108,6 @@ pub trait MIMEPayload {
     // also need to derive cbor::Deserialize
     // and cbor::Serialize
     fn mime_type(&self) -> &'static str;
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct MIMENewKeep {
-    pub auth_token: String,
-    pub keepcontract: KeepContract,
-}
-
-impl MIMEPayload for MIMENewKeep {
-    fn mime_type(&self) -> &'static str {
-        "new-keep"
-    }
 }
 
 #[cfg(test)]
