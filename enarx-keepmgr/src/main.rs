@@ -39,8 +39,8 @@ async fn main() {
 
     let new_keep_post = warp::post()
         .and(warp::path("new_keep"))
-        //  .and(warp::body::stream())
-        .and(warp::body::bytes())
+        .and(warp::body::aggregate())
+        //        .and(filters::body_parse)
         .and(filters::with_available_backends(available_backends))
         .and(filters::with_keeplist(keeplist))
         .and_then(filters::new_keep_parse);
@@ -85,58 +85,48 @@ mod models {
 }
 
 mod filters {
-    //    use bytes::buf::Buf;
-    //    use bytes::Bytes;
+    use bytes::Bytes;
     use koine::*;
-    use serde_cbor::*;
+    use serde_cbor::de;
     use std::convert::Infallible;
+    use std::error::Error;
+    use std::fmt;
     use std::process::Command;
     use uuid::Uuid;
     use warp::{http::StatusCode, reject::Reject, Filter, Rejection, Reply, Stream};
 
     // -------
-    struct Invalid;
-    impl Reject for Invalid {}
+    /*
+        #[derive(Debug)]
+        struct Invalid;
 
-    fn validated_body(
-        bytes: warp::hyper::body::Bytes,
-    ) -> impl Filter<Extract = (warp::hyper::body::Bytes,), Error = Rejection> + Copy {
-        (|bytes: Bytes| async move {
-            if bytes.slice(..) {
-                Ok(bytes.slice(..))
-            } else {
-                Err(warp::reject::custom(Invalid))
-            }
-        })
-    }
-
-    async fn report_invalid(r: Rejection) -> Result<impl Reply, Infallible> {
-        let reply = warp::reply::reply();
-
-        if let Some(Invalid) = r.find() {
-            Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST))
-        } else {
-            // Do better error handling here
-            Ok(warp::reply::with_status(
-                reply,
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ))
+        pub fn validated_body(
+            bytes: warp::hyper::body::Bytes,
+        ) -> impl Filter<Extract = (warp::hyper::body::Bytes,), Error = Rejection> + Copy {
+            (|bytes: Bytes| async move {
+                if bytes.slice(..).clone().is_ok() {
+                    Ok(bytes.slice(..))
+                } else {
+                    Err(warp::reject::custom(Invalid))
+                }
+            })
         }
-    }
 
+        async fn report_invalid(r: Rejection) -> Result<impl Reply, Infallible> {
+            let reply = warp::reply::reply();
+
+            if let Some(Invalid) = r.find() {
+                Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST))
+            } else {
+                // Do better error handling here
+                Ok(warp::reply::with_status(
+                    reply,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ))
+            }
+        }
+    */
     // -------
-
-    pub fn with_available_backends(
-        available_backends: Vec<Backend>,
-    ) -> impl Filter<Extract = (Vec<Backend>,), Error = std::convert::Infallible> + Clone {
-        warp::any().map(move || available_backends.clone())
-    }
-
-    pub fn with_keeplist(
-        keeplist: KeepList,
-    ) -> impl Filter<Extract = (KeepList,), Error = std::convert::Infallible> + Clone {
-        warp::any().map(move || keeplist.clone())
-    }
 
     pub fn new_keep(backend: Backend) -> Keep {
         let new_kuuid = Uuid::new_v4();
@@ -165,54 +155,130 @@ mod filters {
             human_readable_info: None,
         }
     }
+    /*
+       pub async fn body_parse<B>(
+           bytes: B,
+       ) -> impl Filter<Extract = (Vec<u8>,), Error = std::convert::Infallible> + Clone
+       where
+           B: hyper::body::Buf,
+       {
+           println!("starting work with {} bytes, apparently", bytes.remaining());
+           let mut bytesvec: Vec<u8> = Vec::new();
+           bytesvec.extend_from_slice(bytes.bytes());
+           warp::any().map(move || bytesvec.clone())
+       }
+    */
 
-    pub async fn new_keep_parse(
-        //        cbor_stream: warp::hyper::body::Bytes,
-        cbor_stream: &[u8],
+    #[derive(Debug)]
+    struct LocalCborErr {
+        details: String,
+    }
 
+    impl LocalCborErr {
+        fn new(msg: &str) -> LocalCborErr {
+            LocalCborErr {
+                details: msg.to_string(),
+            }
+        }
+    }
+
+    impl fmt::Display for LocalCborErr {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.details)
+        }
+    }
+
+    impl Error for LocalCborErr {
+        fn description(&self) -> &str {
+            &self.details
+        }
+    }
+
+    impl warp::reject::Reject for LocalCborErr {}
+
+    pub fn with_available_backends(
+        available_backends: Vec<Backend>,
+    ) -> impl Filter<Extract = (Vec<Backend>,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || available_backends.clone())
+    }
+
+    pub fn with_keeplist(
+        keeplist: KeepList,
+    ) -> impl Filter<Extract = (KeepList,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || keeplist.clone())
+    }
+
+    pub async fn new_keep_parse<B>(
+        bytes: B,
         available_backends: Vec<Backend>,
         keeplist: KeepList,
-        //    ) -> Result<impl warp::Reply, Infallible> {
-    ) -> Result<impl warp::Reply> {
+    ) -> Result<impl warp::Reply, warp::Rejection>
+    where
+        B: hyper::body::Buf,
+    {
+        //FIXME - we need a cbor-reply
+        //======
         let undefined = UndefinedReply {
             text: String::from("undefined"),
         };
-        //FIXME - we need a cbor-reply
         let mut json_reply = warp::reply::json(&undefined);
+        //======
 
-        //        let mut it = Deserializer::from_slice(&data[..]).into_iter::<Value>();
-        //let keepcontract = Deserializer::from_reader(cbor_stream).into_iter::<KeepContract>();
-        let keepcontract: KeepContract = de::from_slice(&cbor_stream).unwrap();
+        //retrieve a Vector of u8 from the received body
+        let mut bytesvec: Vec<u8> = Vec::new();
+        bytesvec.extend_from_slice(bytes.bytes());
 
-        //assume unsupported to start
-        let mut supported: bool = false;
-        println!("new-keep ...");
-
-        let keeparch = keepcontract.backend;
-        //TODO - we need to get the listen address from the Keep later in the process
-        //TODO - check supported
         /*
-        if available_backends.iter().any(|backend| backend == keeparch) {
-            supported = true;
-        }*/
+        //deserialise the Vector into a KeepContract (and handle errors)
+        let keepcontract: KeepContract = de::from_slice(&bytesvec)
+            .map_err(|e| LocalCborErr {
+                details: e.to_string(),
+            })
+            .unwrap();
+         */
+        //deserialise the Vector into a KeepContract (and handle errors)
+        let keepcontract: KeepContract;
+        match de::from_slice(&bytesvec) {
+            Ok(k) => {
+                keepcontract = k;
+                //assume unsupported to start
+                let mut supported: bool = false;
+                println!("new-keep ...");
 
-        if supported {
-            let mut kll = keeplist.lock().await;
-            let new_keep = new_keep(keeparch);
-            println!(
-                "Keeplist currently has {} entries, about to add {}",
-                kll.len(),
-                new_keep.kuuid,
-            );
-            //add this new new keep to the list
-            kll.push(new_keep.clone());
-            json_reply = warp::reply::json(&new_keep);
-        //TODO - deal with attestation via "stream"
-        } else {
-            json_reply = warp::reply::json(&"Unsupported backend".to_string());
+                let keeparch = keepcontract.backend;
+                //TODO - we need to get the listen address from the Keep later in the process
+                //TODO - check supported
+                /*
+                    if available_backends.iter().any(|backend| backend == keeparch) {
+                    supported = true;
+                }*/
+
+                if supported {
+                    let mut kll = keeplist.lock().await;
+                    let new_keep = new_keep(keeparch);
+                    println!(
+                        "Keeplist currently has {} entries, about to add {}",
+                        kll.len(),
+                        new_keep.kuuid,
+                    );
+                    //add this new new keep to the list
+                    kll.push(new_keep.clone());
+                    json_reply = warp::reply::json(&new_keep);
+                    //TODO - deal with attestation via "stream"
+                    //FIXME - need a cbor reply!
+                    Ok(json_reply)
+                } else {
+                    json_reply = warp::reply::json(&"Unsupported backend".to_string());
+                    Ok(json_reply)
+                }
+            }
+            Err(e) => {
+                let lcbore = LocalCborErr {
+                    details: e.to_string(),
+                };
+                Err(warp::reject::custom(lcbore))
+            }
         }
-        //FIXME - need a cbor reply!
-        Ok(json_reply)
     }
     /*
         //TODO - break this into different methods
