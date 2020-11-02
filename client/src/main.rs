@@ -13,6 +13,7 @@
 extern crate reqwest;
 
 use koine::*;
+use std::fmt::Debug;
 
 //use serde_derive::{Deserialize, Serialize};
 //use reqwest::Body;
@@ -38,13 +39,18 @@ fn main() {
         keepmgr: keepmgr.clone(),
         backend: Backend::Nil,
     };
-    //create keep
-    let keep_result: Keep = new_keep(&keepmgr, &keepcontract).unwrap();
-    println!(
-        "Received keep, kuuid = {:?}, backend = {}",
-        keep_result.kuuid,
-        keep_result.backend.as_str()
-    );
+    //TEST, TEST, TEST
+    let backend_test: Backend = backend_test(&keepmgr, &keepcontract).unwrap();
+    println!("Received backend = {}", backend_test.as_str());
+    /*
+        //create keep
+        let keep_result: Keep = new_keep(&keepmgr, &keepcontract).unwrap();
+        println!(
+            "Received keep, kuuid = {:?}, backend = {}",
+            keep_result.kuuid,
+            keep_result.backend.as_str()
+        );
+    */
     //perform attestation
     //steps required will depend on backend
 
@@ -69,6 +75,33 @@ pub fn list_hosts() -> Result<Vec<KeepMgr>, String> {
 //TODO - create Keep struct, including backend, what else?
 pub fn list_keepcontracts(_keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
     Err("Unimplemented".to_string())
+}
+
+pub fn backend_test(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Backend, String> {
+    //FIXME - this for testing ONLY!
+    println!("About to send backend = {}", &keepcontract.backend.as_str());
+    let cbor_msg = to_vec(&keepcontract.backend);
+    let keep_mgr_url = format!("http://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
+
+    let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
+        .build()
+        .unwrap()
+        .post(&keep_mgr_url)
+        .body(cbor_msg.unwrap())
+        .send()
+        .expect("Problem getting response");
+    println!("Got some sort of response!");
+
+    let backend_response = from_slice(&cbor_response.bytes().unwrap());
+    match backend_response {
+        Ok(backend) => Ok(backend),
+        Err(e) => {
+            println!("Problem with response {}", e);
+            Err("Error with response".to_string())
+        }
+    }
+
+    //    Ok(backend)
 }
 
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
