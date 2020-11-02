@@ -22,10 +22,19 @@ use warp::Filter;
 
 #[tokio::main]
 async fn main() {
-    let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), BIND_PORT);
+    //TODO - remove hard-coded values - will require certificate changes/generation
+    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let socket = SocketAddr::new(my_addr, BIND_PORT);
+
+    let my_info: KeepMgr = KeepMgr {
+        ipaddr: my_addr,
+        port: BIND_PORT,
+    };
 
     //find available backends for this host (currently only local - may extend?)
     let available_backends = models::populate_available_backends().await;
+
+    let available_contracts = models::populate_contracts(&available_backends, &my_info).await;
 
     //Provide mechanism to find existing Keeps
     let keeplist = models::find_existing_keep_loaders().await;
@@ -37,14 +46,19 @@ async fn main() {
         )
     });
 
+    let list_contracts = warp::post()
+        .and(warp::path("list_contracts"))
+        .and(filters::with_available_backends(available_backends.clone()))
+        .and_then(filters::list_contracts);
+
     let new_keep_post = warp::post()
         .and(warp::path("new_keep"))
         .and(warp::body::aggregate())
-        .and(filters::with_available_backends(available_backends))
+        .and(filters::with_available_backends(available_backends.clone()))
         .and(filters::with_keeplist(keeplist))
         .and_then(filters::new_keep_parse);
 
-    let routes = new_keep_post.or(declare);
+    let routes = list_contracts.or(new_keep_post).or(declare);
     println!(
         "Starting server on {}, {} v{}",
         BIND_PORT, PROTO_NAME, PROTO_VERSION
@@ -69,6 +83,15 @@ mod models {
         available_backends.push(Backend::Nil);
         available_backends.push(Backend::Kvm);
         available_backends
+    }
+
+    pub async fn populate_contracts(
+        available_backends: &Vec<Backend>,
+        keepmgr: &KeepMgr,
+    ) -> Vec<KeepContract> {
+        let mut available_contracts = Vec::new();
+        //TODO - create more complex approach
+        available_contracts
     }
 
     pub type KeepList = Arc<Mutex<Vec<koine::Keep>>>;
@@ -169,6 +192,17 @@ mod filters {
         keeplist: KeepList,
     ) -> impl Filter<Extract = (KeepList,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || keeplist.clone())
+    }
+
+    pub async fn list_contracts(
+        available_backends: Vec<Backend>,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        //assume infinite contracts for now, and do no locking
+        let cbor_reply_body: Vec<u8> = to_vec(&available_backends).unwrap();
+        let cbor_reply: CborReply = CborReply {
+            msg: cbor_reply_body,
+        };
+        Ok(cbor_reply)
     }
 
     pub async fn new_keep_parse<B>(

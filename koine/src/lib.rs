@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -55,9 +56,8 @@ pub type KeepList = Arc<Mutex<Vec<Keep>>>;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KeepMgr {
-    pub ipaddr: String,
+    pub ipaddr: IpAddr,
     pub port: u16,
-    pub keeps: Vec<Keep>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -65,6 +65,7 @@ pub struct KeepContract {
     pub keepmgr: KeepMgr,
     pub backend: Backend,
     //TODO - add duration of contract availability
+    //TODO - add further information
 }
 
 #[derive(Serialize, Deserialize, Clone)]
