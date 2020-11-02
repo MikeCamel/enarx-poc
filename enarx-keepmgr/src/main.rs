@@ -173,7 +173,7 @@ mod filters {
 
     pub async fn new_keep_parse<B>(
         bytes: B,
-        _available_backends: Vec<Backend>,
+        available_backends: Vec<Backend>,
         keeplist: KeepList,
     ) -> Result<impl warp::Reply, warp::Rejection>
     where
@@ -190,23 +190,24 @@ mod filters {
                 keepcontract = k;
                 //assume unsupported to start
                 let mut supported: bool = false;
-                println!("new-keep ...");
+                println!("\nnew-keep ...");
 
                 let keeparch = keepcontract.backend;
                 //TODO - we need to get the listen address from the Keep later in the process
                 //TODO - check whether this is supported
 
-                /*if available_backends
+                if available_backends
                     .iter()
                     .any(|backend| backend == &keeparch)
-                {*/
-                //assume supported for now
-                supported = true;
-                println!(
-                    "Received a request for a supported Keep ({})",
-                    keeparch.as_str()
-                );
-                //}
+                {
+                    supported = true;
+                    println!(
+                        "Received a request for a supported Keep ({})",
+                        keeparch.as_str()
+                    );
+                } else {
+                    println!("Unsupported backend requested");
+                }
 
                 if supported {
                     let mut kll = keeplist.lock().await;
@@ -217,6 +218,7 @@ mod filters {
                         new_keep.kuuid,
                     );
                     //add this new new keep to the list
+                    kll.push(new_keep.clone());
                     let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
                     let cbor_reply: CborReply = CborReply {
                         msg: cbor_reply_body,

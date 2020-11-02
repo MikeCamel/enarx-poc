@@ -32,7 +32,7 @@ pub const KEEP_ARCH: &str = "keep-arch";
 pub const WASMLDR_BIND_PORT_CMD: &str = "wasmldr-bind-port";
 pub const WASMLDR_ADDR_CMD: &str = "wasmldr-addr";
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum Backend {
     Nil,
     Sev,
