@@ -50,9 +50,9 @@ async fn main() {
         BIND_PORT, PROTO_NAME, PROTO_VERSION
     );
     warp::serve(routes)
-        //        .tls()
-        //        .cert_path("key-material/server.crt")
-        //        .key_path("key-material/server.key")
+        .tls()
+        .cert_path("key-material/server.crt")
+        .key_path("key-material/server.key")
         .run(socket)
         .await;
 }

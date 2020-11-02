@@ -13,14 +13,7 @@
 extern crate reqwest;
 
 use koine::*;
-//use std::fmt::Debug;
-
-//use serde_derive::{Deserialize, Serialize};
-//use reqwest::Body;
 use serde_cbor::{from_slice, to_vec};
-
-//use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-//use uuid::Uuid;
 
 //currently only one Keep-Manager and one Keep supported
 fn main() {
@@ -31,7 +24,7 @@ fn main() {
     // (actually contracts)
     //  - test with "Nil"
     let keepmgr = KeepMgr {
-        ipaddr: String::from("127.0.0.1"),
+        ipaddr: String::from("localhost"),
         port: 3030,
         keeps: Vec::new(),
     };
@@ -107,10 +100,11 @@ pub fn backend_test(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Ba
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
     let cbor_msg = to_vec(&keepcontract);
     //    let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
-    let keep_mgr_url = format!("http://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
+    let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
+    println!("About to connect on {}", keep_mgr_url);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
-        //.danger_accept_invalid_certs(true)
+        .danger_accept_invalid_certs(true)
         .build()
         .unwrap()
         .post(&keep_mgr_url)
