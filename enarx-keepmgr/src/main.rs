@@ -85,48 +85,15 @@ mod models {
 }
 
 mod filters {
-    use bytes::Bytes;
+    //    use bytes::Bytes;
     use koine::*;
-    use serde_cbor::de;
+    use serde_cbor::{de, from_slice, to_vec};
     use std::convert::Infallible;
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
     use uuid::Uuid;
     use warp::{http::StatusCode, reject::Reject, Filter, Rejection, Reply, Stream};
-
-    // -------
-    /*
-        #[derive(Debug)]
-        struct Invalid;
-
-        pub fn validated_body(
-            bytes: warp::hyper::body::Bytes,
-        ) -> impl Filter<Extract = (warp::hyper::body::Bytes,), Error = Rejection> + Copy {
-            (|bytes: Bytes| async move {
-                if bytes.slice(..).clone().is_ok() {
-                    Ok(bytes.slice(..))
-                } else {
-                    Err(warp::reject::custom(Invalid))
-                }
-            })
-        }
-
-        async fn report_invalid(r: Rejection) -> Result<impl Reply, Infallible> {
-            let reply = warp::reply::reply();
-
-            if let Some(Invalid) = r.find() {
-                Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST))
-            } else {
-                // Do better error handling here
-                Ok(warp::reply::with_status(
-                    reply,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ))
-            }
-        }
-    */
-    // -------
 
     pub fn new_keep(backend: Backend) -> Keep {
         let new_kuuid = Uuid::new_v4();
@@ -155,19 +122,6 @@ mod filters {
             human_readable_info: None,
         }
     }
-    /*
-       pub async fn body_parse<B>(
-           bytes: B,
-       ) -> impl Filter<Extract = (Vec<u8>,), Error = std::convert::Infallible> + Clone
-       where
-           B: hyper::body::Buf,
-       {
-           println!("starting work with {} bytes, apparently", bytes.remaining());
-           let mut bytesvec: Vec<u8> = Vec::new();
-           bytesvec.extend_from_slice(bytes.bytes());
-           warp::any().map(move || bytesvec.clone())
-       }
-    */
 
     #[derive(Debug)]
     struct LocalCborErr {
@@ -210,7 +164,7 @@ mod filters {
 
     pub async fn new_keep_parse<B>(
         bytes: B,
-        available_backends: Vec<Backend>,
+        _available_backends: Vec<Backend>,
         keeplist: KeepList,
     ) -> Result<impl warp::Reply, warp::Rejection>
     where
@@ -221,6 +175,7 @@ mod filters {
         let undefined = UndefinedReply {
             text: String::from("undefined"),
         };
+
         let mut json_reply = warp::reply::json(&undefined);
         //======
 
@@ -228,14 +183,6 @@ mod filters {
         let mut bytesvec: Vec<u8> = Vec::new();
         bytesvec.extend_from_slice(bytes.bytes());
 
-        /*
-        //deserialise the Vector into a KeepContract (and handle errors)
-        let keepcontract: KeepContract = de::from_slice(&bytesvec)
-            .map_err(|e| LocalCborErr {
-                details: e.to_string(),
-            })
-            .unwrap();
-         */
         //deserialise the Vector into a KeepContract (and handle errors)
         let keepcontract: KeepContract;
         match de::from_slice(&bytesvec) {
@@ -247,15 +194,24 @@ mod filters {
 
                 let keeparch = keepcontract.backend;
                 //TODO - we need to get the listen address from the Keep later in the process
-                //TODO - check supported
-                /*
-                    if available_backends.iter().any(|backend| backend == keeparch) {
-                    supported = true;
-                }*/
+                //TODO - check whether this is supported
+
+                /*if available_backends
+                    .iter()
+                    .any(|backend| backend == &keeparch)
+                {*/
+                //assume supported for now
+                supported = true;
+                println!(
+                    "Received a request for a supported Keep ({})",
+                    keeparch.as_str()
+                );
+                //}
 
                 if supported {
                     let mut kll = keeplist.lock().await;
                     let new_keep = new_keep(keeparch);
+                    let cbor_msg = to_vec(&new_keep);
                     println!(
                         "Keeplist currently has {} entries, about to add {}",
                         kll.len(),

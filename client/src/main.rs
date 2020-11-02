@@ -39,7 +39,12 @@ fn main() {
         backend: Backend::Nil,
     };
     //create keep
-    let _keep_result = new_keep(&keepmgr, &keepcontract);
+    let keep_result: Keep = new_keep(&keepmgr, &keepcontract).unwrap();
+    println!(
+        "Received keep, kuuid = {:?}, backend = {}",
+        keep_result.kuuid,
+        keep_result.backend.as_str()
+    );
     //perform attestation
     //steps required will depend on backend
 
@@ -67,14 +72,7 @@ pub fn list_keepcontracts(_keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, Strin
 }
 
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
-    //TODO - cbor pass new-keep command
     let cbor_msg = to_vec(&keepcontract);
-    /*
-    let mut command_new_keep: HashMap<String, String> = HashMap::new();
-    command_new_keep.insert("command".to_string(), "new-keep".to_string());
-    //    command_new_keep.insert("keep-arch".to_string(), KEEP_ARCH_NIL.to_string());
-    command_new_keep.insert("auth-token".to_string(), "a3f9cb07".to_string());
-     */
     let keep_mgr_url = format!("https://{}:{}/keeps_post/", keepmgr.ipaddr, keepmgr.port);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
@@ -86,7 +84,6 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
         .send()
         .expect("Problem starting keep");
 
-    //let keep: Keep = response.json().expect("TODO - error handling");
     let keep = from_slice(&cbor_response.bytes().unwrap()).unwrap();
     Ok(keep)
 }
