@@ -40,7 +40,6 @@ async fn main() {
     let new_keep_post = warp::post()
         .and(warp::path("new_keep"))
         .and(warp::body::aggregate())
-        //        .and(filters::body_parse)
         .and(filters::with_available_backends(available_backends))
         .and(filters::with_keeplist(keeplist))
         .and_then(filters::new_keep_parse);
@@ -51,9 +50,9 @@ async fn main() {
         BIND_PORT, PROTO_NAME, PROTO_VERSION
     );
     warp::serve(routes)
-        .tls()
-        .cert_path("key-material/server.crt")
-        .key_path("key-material/server.key")
+        //        .tls()
+        //        .cert_path("key-material/server.crt")
+        //        .key_path("key-material/server.key")
         .run(socket)
         .await;
 }
@@ -85,15 +84,14 @@ mod models {
 }
 
 mod filters {
-    //    use bytes::Bytes;
+    use http::response::*;
     use koine::*;
     use serde_cbor::{de, from_slice, to_vec};
-    use std::convert::Infallible;
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
     use uuid::Uuid;
-    use warp::{http::StatusCode, reject::Reject, Filter, Rejection, Reply, Stream};
+    use warp::Filter;
 
     pub fn new_keep(backend: Backend) -> Keep {
         let new_kuuid = Uuid::new_v4();
@@ -120,6 +118,17 @@ mod filters {
             state: LoaderState::Ready,
             wasmldr: None,
             human_readable_info: None,
+        }
+    }
+
+    #[derive(Debug)]
+    struct CborReply {
+        pub msg: Vec<u8>,
+    }
+
+    impl warp::reply::Reply for CborReply {
+        fn into_response(self) -> warp::reply::Response {
+            Response::new(self.msg.into())
         }
     }
 
@@ -170,15 +179,6 @@ mod filters {
     where
         B: hyper::body::Buf,
     {
-        //FIXME - we need a cbor-reply
-        //======
-        let undefined = UndefinedReply {
-            text: String::from("undefined"),
-        };
-
-        let mut json_reply = warp::reply::json(&undefined);
-        //======
-
         //retrieve a Vector of u8 from the received body
         let mut bytesvec: Vec<u8> = Vec::new();
         bytesvec.extend_from_slice(bytes.bytes());
@@ -211,21 +211,20 @@ mod filters {
                 if supported {
                     let mut kll = keeplist.lock().await;
                     let new_keep = new_keep(keeparch);
-                    let cbor_msg = to_vec(&new_keep);
                     println!(
                         "Keeplist currently has {} entries, about to add {}",
                         kll.len(),
                         new_keep.kuuid,
                     );
                     //add this new new keep to the list
-                    kll.push(new_keep.clone());
-                    json_reply = warp::reply::json(&new_keep);
-                    //TODO - deal with attestation via "stream"
-                    //FIXME - need a cbor reply!
-                    Ok(json_reply)
+                    let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
+                    let cbor_reply: CborReply = CborReply {
+                        msg: cbor_reply_body,
+                    };
+                    Ok(cbor_reply)
                 } else {
-                    json_reply = warp::reply::json(&"Unsupported backend".to_string());
-                    Ok(json_reply)
+                    let lcbore = LocalCborErr::new("Unsupported backend");
+                    Err(warp::reject::custom(lcbore))
                 }
             }
             Err(e) => {

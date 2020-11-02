@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 pub const LOCAL_LISTEN_ADDRESS: &str = "0.0.0.0";
 
-pub const PROTO_VERSION: f32 = 0.1;
+pub const PROTO_VERSION: f32 = 0.2;
 pub const PROTO_NAME: &str = "Enarx-Keep-Manager";
 pub const BIND_PORT: u16 = 3030;
 

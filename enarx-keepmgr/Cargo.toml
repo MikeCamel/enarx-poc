@@ -10,14 +10,14 @@ license = "Apache-2.0"
 [dependencies]
 reqwest = { version = "0.10.7", features = ["blocking", "json", "native-tls"] }
 rand = "0.7.3"
-
 hyper = "0.13"
 tokio = { version = "0.2", features = ["macros"] }
 warp = { version = "0.2", features = ["tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.10"
-#serde_json = "1.0"
 cbor = { version = "0.4.1" }
+http = "0.2"
+
 futures = "0.3.7"
 bytes = "0.6.0"
 
@@ -28,6 +28,3 @@ uuid =  { version = "0.8", features = ["serde", "v4"] }
 
 koine = { path = "../koine" }
 
-# [[bin]]
-# name = "enarx-keepmgr-tester"
-# path = "src/keep-manager-tester.rs"
