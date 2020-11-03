@@ -14,27 +14,32 @@ extern crate reqwest;
 
 use koine::*;
 use serde_cbor::{from_slice, to_vec};
+use std::net::{IpAddr, Ipv4Addr};
 
 //currently only one Keep-Manager and one Keep supported
 fn main() {
     //list available keepmgrs
     // - currently only localhost supported
-
-    //for a particular keepmgr, list available keep_types
-    // (actually contracts)
-    //  - test with "Nil"
+    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let keepmgr = KeepMgr {
-        ipaddr: String::from("localhost"),
+        ipaddr: my_addr,
         port: 3030,
-        keeps: Vec::new(),
     };
+    //for a particular keepmgr, list available
+    //  - test with "Nil"
+    let keepcontracts: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
+    for keepcontract in keepcontracts.iter() {
+        println!(
+            "Contract available for a {} Keep",
+            keepcontract.backend.as_str(),
+        );
+    }
+
+    //TODO - use one of the ones we've retrieved
     let keepcontract = KeepContract {
         keepmgr: keepmgr.clone(),
         backend: Backend::Nil,
     };
-    //TEST, TEST, TEST
-    //  let backend_test: Backend = backend_test(&keepmgr, &keepcontract).unwrap();
-    //println!("Received backend = {}", backend_test.as_str());
 
     //create keep
     let keep_result: Keep = new_keep(&keepmgr, &keepcontract).unwrap();
@@ -65,9 +70,30 @@ pub fn list_hosts() -> Result<Vec<KeepMgr>, String> {
     Err("Unimplemented".to_string())
 }
 
-//TODO - create Keep struct, including backend, what else?
-pub fn list_keepcontracts(_keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
-    Err("Unimplemented".to_string())
+pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
+    let keep_mgr_url = format!(
+        "https://{}:{}/list-contracts/",
+        keepmgr.ipaddr, keepmgr.port
+    );
+    println!("About to connect on {}", keep_mgr_url);
+
+    let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap()
+        .post(&keep_mgr_url)
+        //.body()
+        .send()
+        .expect("Problem starting keep");
+
+    let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
+    match contractvec_response {
+        Ok(kcvec) => Ok(kcvec),
+        Err(e) => {
+            println!("Problem with keep response {}", e);
+            Err("Error with response".to_string())
+        }
+    }
 }
 /*
 pub fn backend_test(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Backend, String> {
@@ -99,7 +125,6 @@ pub fn backend_test(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Ba
 */
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
     let cbor_msg = to_vec(&keepcontract);
-    //    let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
     let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
     println!("About to connect on {}", keep_mgr_url);
 

@@ -33,9 +33,8 @@ async fn main() {
 
     //find available backends for this host (currently only local - may extend?)
     let available_backends = models::populate_available_backends().await;
-
-    let available_contracts = models::populate_contracts(&available_backends, &my_info).await;
-
+    //populate contract list
+    let contractlist = models::populate_contracts(&available_backends, &my_info).await;
     //Provide mechanism to find existing Keeps
     let keeplist = models::find_existing_keep_loaders().await;
 
@@ -48,7 +47,7 @@ async fn main() {
 
     let list_contracts = warp::post()
         .and(warp::path("list_contracts"))
-        .and(filters::with_available_backends(available_backends.clone()))
+        .and(filters::with_contractlist(contractlist))
         .and_then(filters::list_contracts);
 
     let new_keep_post = warp::post()
@@ -88,13 +87,20 @@ mod models {
     pub async fn populate_contracts(
         available_backends: &Vec<Backend>,
         keepmgr: &KeepMgr,
-    ) -> Vec<KeepContract> {
-        let mut available_contracts = Vec::new();
-        //TODO - create more complex approach
-        available_contracts
-    }
+    ) -> ContractList {
+        let available_contracts = new_empty_contractlist();
+        let mut cl = available_contracts.lock().await;
 
-    pub type KeepList = Arc<Mutex<Vec<koine::Keep>>>;
+        //create a separate contract per available backend
+        for be in available_backends.iter() {
+            let new_keepcontract = KeepContract {
+                backend: be.clone(),
+                keepmgr: keepmgr.clone(),
+            };
+            cl.push(new_keepcontract.clone());
+        }
+        available_contracts.clone()
+    }
 
     pub fn new_empty_keeplist() -> KeepList {
         Arc::new(Mutex::new(Vec::new()))
@@ -103,6 +109,10 @@ mod models {
         println!("Looking for existing keep-loaders in /tmp");
         //TODO - implement (scheme required)
         new_empty_keeplist()
+    }
+
+    pub fn new_empty_contractlist() -> ContractList {
+        Arc::new(Mutex::new(Vec::new()))
     }
 }
 
@@ -194,11 +204,19 @@ mod filters {
         warp::any().map(move || keeplist.clone())
     }
 
+    pub fn with_contractlist(
+        contractlist: ContractList,
+    ) -> impl Filter<Extract = (ContractList,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || contractlist.clone())
+    }
+
     pub async fn list_contracts(
-        available_backends: Vec<Backend>,
+        available_contracts: ContractList,
     ) -> Result<impl warp::Reply, warp::Rejection> {
         //assume infinite contracts for now, and do no locking
-        let cbor_reply_body: Vec<u8> = to_vec(&available_backends).unwrap();
+        let mut cl = available_contracts.lock().await;
+        let cl = &mut *cl;
+        let cbor_reply_body: Vec<u8> = to_vec(&cl).unwrap();
         let cbor_reply: CborReply = CborReply {
             msg: cbor_reply_body,
         };
@@ -229,7 +247,6 @@ mod filters {
                 let keeparch = keepcontract.backend;
                 //TODO - we need to get the listen address from the Keep later in the process
                 //TODO - check whether this is supported
-
                 if available_backends
                     .iter()
                     .any(|backend| backend == &keeparch)

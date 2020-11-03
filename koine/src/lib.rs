@@ -53,6 +53,7 @@ impl Backend {
 }
 
 pub type KeepList = Arc<Mutex<Vec<Keep>>>;
+pub type ContractList = Arc<Mutex<Vec<KeepContract>>>;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KeepMgr {
