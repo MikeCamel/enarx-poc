@@ -133,7 +133,7 @@ mod filters {
         let new_kuuid = Uuid::new_v4();
         println!("About to spawn new keep-loader");
         let service_cmd = format!("enarx-keep-{}@{}.service", backend.as_str(), new_kuuid);
-        println!("service_cmd = {}", new_kuuid);
+        println!("service_cmd = {}", service_cmd);
         let _child = Command::new("systemctl")
             .arg("--user")
             .arg("start")

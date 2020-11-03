@@ -44,10 +44,10 @@ pub enum Backend {
 impl Backend {
     pub fn as_str(&self) -> &'static str {
         match *self {
-            Backend::Nil => "Nil",
-            Backend::Sev => "Sev",
-            Backend::Sgx => "Sgx",
-            Backend::Kvm => "Kvm",
+            Backend::Nil => "nil",
+            Backend::Sev => "sev",
+            Backend::Sgx => "sgx",
+            Backend::Kvm => "kvm",
         }
     }
 }
