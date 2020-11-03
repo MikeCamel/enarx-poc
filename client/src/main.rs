@@ -44,8 +44,9 @@ fn main() {
     println!();
     for i in 0..keepcontracts.len() {
         println!(
-            "Contract available for a {} Keep",
+            "Contract available for a {} Keep, uuid = {:?}",
             keepcontracts[i].backend.as_str(),
+            keepcontracts[i].uuid
         );
     }
 
@@ -84,7 +85,7 @@ pub fn list_hosts() -> Result<Vec<KeepMgr>, String> {
 }
 
 pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
-    let keep_mgr_url = format!("http://{}:{}/list_contracts/", keepmgr.ipaddr, keepmgr.port);
+    let keep_mgr_url = format!("http://{}:{}/contracts/", keepmgr.ipaddr, keepmgr.port);
     //removing HTTPS for now, due to certificate issues
     //let keep_mgr_url = format!(
     //    "https://{}:{}/list-contracts/",

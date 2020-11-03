@@ -65,6 +65,7 @@ pub struct KeepMgr {
 pub struct KeepContract {
     pub keepmgr: KeepMgr,
     pub backend: Backend,
+    pub uuid: Uuid,
     //TODO - add duration of contract availability
     //TODO - add further information
 }

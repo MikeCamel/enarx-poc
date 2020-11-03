@@ -46,7 +46,7 @@ async fn main() {
     });
 
     let list_contracts = warp::post()
-        .and(warp::path("list_contracts"))
+        .and(warp::path("contracts"))
         .and(filters::with_contractlist(contractlist))
         .and_then(filters::list_contracts);
 
@@ -76,6 +76,7 @@ mod models {
     use koine::*;
     use std::sync::Arc;
     use tokio::sync::Mutex;
+    use uuid::Uuid;
 
     pub async fn populate_available_backends() -> Vec<Backend> {
         let mut available_backends = Vec::new();
@@ -98,6 +99,7 @@ mod models {
             let new_keepcontract = KeepContract {
                 backend: be.clone(),
                 keepmgr: keepmgr.clone(),
+                uuid: Uuid::new_v4(),
             };
             println!("Populating contract list with backend {}", be.as_str());
             cl.push(new_keepcontract.clone());
@@ -130,6 +132,8 @@ mod filters {
     use warp::Filter;
 
     pub fn new_keep(backend: Backend) -> Keep {
+        //TODO - consume uuid from contract (this should be passed instead of Backend),
+        // then repopulate
         let new_kuuid = Uuid::new_v4();
         println!("About to spawn new keep-loader");
         let service_cmd = format!("enarx-keep-{}@{}.service", backend.as_str(), new_kuuid);
