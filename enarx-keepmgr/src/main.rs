@@ -58,14 +58,16 @@ async fn main() {
         .and_then(filters::new_keep_parse);
 
     let routes = list_contracts.or(new_keep_post).or(declare);
+    //    let routes = list_contracts.or(declare);
     println!(
         "Starting server on {}, {} v{}",
         BIND_PORT, PROTO_NAME, PROTO_VERSION
     );
     warp::serve(routes)
-        .tls()
-        .cert_path("key-material/server.crt")
-        .key_path("key-material/server.key")
+        //removing TLS for now due to certificate issues
+        //.tls()
+        //.cert_path("key-material/server.crt")
+        //.key_path("key-material/server.key")
         .run(socket)
         .await;
 }
@@ -97,6 +99,7 @@ mod models {
                 backend: be.clone(),
                 keepmgr: keepmgr.clone(),
             };
+            println!("Populating contract list with backend {}", be.as_str());
             cl.push(new_keepcontract.clone());
         }
         available_contracts.clone()
@@ -119,7 +122,7 @@ mod models {
 mod filters {
     use http::response::*;
     use koine::*;
-    use serde_cbor::{de, from_slice, to_vec};
+    use serde_cbor::{de, to_vec};
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
@@ -213,9 +216,10 @@ mod filters {
     pub async fn list_contracts(
         available_contracts: ContractList,
     ) -> Result<impl warp::Reply, warp::Rejection> {
-        //assume infinite contracts for now, and do no locking
+        println!("About to serve contractlist (from list_contracts())");
         let mut cl = available_contracts.lock().await;
         let cl = &mut *cl;
+        println!("Found {} contracts", cl.len());
         let cbor_reply_body: Vec<u8> = to_vec(&cl).unwrap();
         let cbor_reply: CborReply = CborReply {
             msg: cbor_reply_body,
@@ -288,69 +292,4 @@ mod filters {
             }
         }
     }
-    /*
-        //TODO - break this into different methods
-        pub async fn old_keeps_parse(
-            cbor_response: Vec<u8>,
-            available_backends: Vec<Backend>,
-            keeplist: KeepList,
-        ) -> Result<impl warp::Reply, Infallible> {
-            let undefined = UndefinedReply {
-                text: String::from("undefined"),
-            };
-            //FIXME - we need a cbor-reply
-            let mut json_reply = warp::reply::json(&undefined);
-
-            //FIXME - have different filters (based on path) - then you know what you have
-            match command_group.get(KEEP_COMMAND).unwrap().as_str() {
-                //TODO - list available IP addresses
-                "list-keep-types" => json_reply = warp::reply::json(&available_backends),
-                "new-keep" => {
-                    //assume unsupported to start
-                    let mut supported: bool = false;
-                    println!("new-keep ...");
-                    //FIXME - not a String!
-                    let keeparch = command_group.get(KEEP_ARCH).unwrap().as_str();
-                    //TODO - we need to get the listen address from the Keep later in the process
-
-                    if available_backends.iter().any(|backend| backend == keeparch) {
-                        supported = true;
-                    }
-
-                    if supported {
-                        let mut kll = keeplist.lock().await;
-                        let new_keep = new_keep(keeparch);
-                        println!(
-                            "Keeplist currently has {} entries, about to add {}",
-                            kll.len(),
-                            new_keep.kuuid,
-                        );
-                        //add this new new keep to the list
-                        kll.push(new_keep.clone());
-                        json_reply = warp::reply::json(&new_keep);
-                    //TODO - deal with attestation via "stream"
-                    } else {
-                        json_reply = warp::reply::json(&"Unsupported backend".to_string());
-                    }
-                }
-                "list-keeps" => {
-                    //update list
-                    let kll = keeplist.lock().await;
-
-                    let kllvec: Vec<Keep> = kll.clone().into_iter().collect();
-                    for keep in &kllvec {
-                        println!("Keep kuuid {}", keep.kuuid);
-                    }
-                    let json_keepvec = KeepVec { klvec: kllvec };
-                    json_reply = warp::reply::json(&json_keepvec);
-                }
-                &_ => {}
-            }
-            println!(
-                "Received a {:?} command",
-                command_group.get(KEEP_COMMAND).unwrap()
-            );
-            Ok(json_reply)
-        }
-    */
 }
