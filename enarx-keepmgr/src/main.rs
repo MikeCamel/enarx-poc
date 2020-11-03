@@ -94,7 +94,8 @@ mod models {
         let available_contracts = new_empty_contractlist();
         let mut cl = available_contracts.lock().await;
 
-        //create a separate contract per available backend
+        //Simple implementation: create a separate contract per available backend
+        // - more complex ones are possible (and likely)
         for be in available_backends.iter() {
             let new_keepcontract = KeepContract {
                 backend: be.clone(),
@@ -105,6 +106,23 @@ mod models {
             cl.push(new_keepcontract.clone());
         }
         available_contracts.clone()
+    }
+
+    pub async fn consume_contract(
+        contracts: ContractList,
+        consume_contract: KeepContract,
+    ) -> Option<Uuid> {
+        let reply_opt = None;
+        let mut cl = contracts.lock().await;
+        println!("contract list currently has {} entries", cl.len());
+        for i in 0..cl.len() {
+            if consume_contract.uuid == cl[i].uuid {
+                cl.remove(i);
+                Some(consume_contract.uuid);
+            }
+        }
+
+        reply_opt
     }
 
     pub fn new_empty_keeplist() -> KeepList {
@@ -254,8 +272,9 @@ mod filters {
 
                 let keeparch = keepcontract.backend;
                 //TODO - we need to get the listen address from the Keep later in the process
-                //TODO - check whether this is supported
-                if available_backends
+                //TODO - change to see whether there's a matching contract, rather than just
+                // a backend
+                if available_backends // <- available_contracts
                     .iter()
                     .any(|backend| backend == &keeparch)
                 {
@@ -269,15 +288,20 @@ mod filters {
                 }
 
                 if supported {
+                    //TODO - <- change to check on consumption (Option(uuid) == good, None == bad)
                     let mut kll = keeplist.lock().await;
-                    let new_keep = new_keep(keeparch);
+                    let new_keep = new_keep(keeparch); //<- TODO - contract, not keeparch
                     println!(
                         "Keeplist currently has {} entries, about to add {}",
                         kll.len(),
                         new_keep.kuuid,
                     );
+                    //TODO - consume this from the contract list
+
                     //add this new new keep to the list
                     kll.push(new_keep.clone());
+
+                    //TODO - repopulate (with one of the same type?)
                     let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
                     let cbor_reply: CborReply = CborReply {
                         msg: cbor_reply_body,
