@@ -47,13 +47,13 @@ async fn main() {
 
     let list_contracts = warp::post()
         .and(warp::path("contracts"))
-        .and(filters::with_contractlist(contractlist))
+        .and(filters::with_contractlist(contractlist.clone()))
         .and_then(filters::list_contracts);
 
     let new_keep_post = warp::post()
         .and(warp::path("new_keep"))
         .and(warp::body::aggregate())
-        .and(filters::with_available_backends(available_backends.clone()))
+        .and(filters::with_contractlist(contractlist))
         .and(filters::with_keeplist(keeplist))
         .and_then(filters::new_keep_parse);
 
@@ -108,23 +108,6 @@ mod models {
         available_contracts.clone()
     }
 
-    pub async fn consume_contract(
-        contracts: ContractList,
-        consume_contract: KeepContract,
-    ) -> Option<Uuid> {
-        let reply_opt = None;
-        let mut cl = contracts.lock().await;
-        println!("contract list currently has {} entries", cl.len());
-        for i in 0..cl.len() {
-            if consume_contract.uuid == cl[i].uuid {
-                cl.remove(i);
-                Some(consume_contract.uuid);
-            }
-        }
-
-        reply_opt
-    }
-
     pub fn new_empty_keeplist() -> KeepList {
         Arc::new(Mutex::new(Vec::new()))
     }
@@ -149,12 +132,17 @@ mod filters {
     use uuid::Uuid;
     use warp::Filter;
 
-    pub fn new_keep(backend: Backend) -> Keep {
+    //pub fn new_keep(backend: Backend) -> Keep {
+    pub fn new_keep(contract: KeepContract) -> Keep {
         //TODO - consume uuid from contract (this should be passed instead of Backend),
         // then repopulate
-        let new_kuuid = Uuid::new_v4();
+        //        let kuuid = contract.uuid;
         println!("About to spawn new keep-loader");
-        let service_cmd = format!("enarx-keep-{}@{}.service", backend.as_str(), new_kuuid);
+        let service_cmd = format!(
+            "enarx-keep-{}@{}.service",
+            contract.backend.as_str(),
+            contract.uuid
+        );
         println!("service_cmd = {}", service_cmd);
         let _child = Command::new("systemctl")
             .arg("--user")
@@ -166,17 +154,35 @@ mod filters {
         println!("Spawned new keep-loader");
         println!(
             "Got this far with backend = {}, new_kuuid = {}",
-            backend.as_str(),
-            new_kuuid
+            contract.backend.as_str(),
+            contract.uuid
         );
 
         Keep {
-            backend: backend,
-            kuuid: new_kuuid,
+            backend: contract.backend,
+            kuuid: contract.uuid,
             state: LoaderState::Ready,
             wasmldr: None,
             human_readable_info: None,
         }
+    }
+
+    pub fn consume_contract(
+        contracts: Vec<KeepContract>,
+        consume_contract: &KeepContract,
+    ) -> Option<Vec<KeepContract>> {
+        let mut reply_opt = None;
+        let mut cl = contracts.clone();
+        println!("contract list currently has {} entries", contracts.len());
+        for i in 0..cl.len() {
+            if consume_contract.uuid == cl[i].uuid {
+                println!("Matching contract with uuid = {}", cl[i].uuid);
+                cl.remove(i);
+                reply_opt = Some(cl.clone());
+                break;
+            }
+        }
+        reply_opt
     }
 
     #[derive(Debug)]
@@ -251,7 +257,7 @@ mod filters {
 
     pub async fn new_keep_parse<B>(
         bytes: B,
-        available_backends: Vec<Backend>,
+        available_contracts: ContractList,
         keeplist: KeepList,
     ) -> Result<impl warp::Reply, warp::Rejection>
     where
@@ -264,52 +270,46 @@ mod filters {
         //deserialise the Vector into a KeepContract (and handle errors)
         let keepcontract: KeepContract;
         match de::from_slice(&bytesvec) {
-            Ok(k) => {
-                keepcontract = k;
-                //assume unsupported to start
-                let mut supported: bool = false;
+            Ok(kc) => {
+                keepcontract = kc;
                 println!("\nnew-keep ...");
-
-                let keeparch = keepcontract.backend;
+                //let mut cl = available_contracts.lock().await;
                 //TODO - we need to get the listen address from the Keep later in the process
                 //TODO - change to see whether there's a matching contract, rather than just
-                // a backend
-                if available_backends // <- available_contracts
-                    .iter()
-                    .any(|backend| backend == &keeparch)
-                {
-                    supported = true;
-                    println!(
-                        "Received a request for a supported Keep ({})",
-                        keeparch.as_str()
-                    );
-                } else {
-                    println!("Unsupported backend requested");
-                }
-
-                if supported {
-                    //TODO - <- change to check on consumption (Option(uuid) == good, None == bad)
-                    let mut kll = keeplist.lock().await;
-                    let new_keep = new_keep(keeparch); //<- TODO - contract, not keeparch
-                    println!(
-                        "Keeplist currently has {} entries, about to add {}",
-                        kll.len(),
-                        new_keep.kuuid,
-                    );
-                    //TODO - consume this from the contract list
-
-                    //add this new new keep to the list
-                    kll.push(new_keep.clone());
-
-                    //TODO - repopulate (with one of the same type?)
-                    let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
-                    let cbor_reply: CborReply = CborReply {
-                        msg: cbor_reply_body,
-                    };
-                    Ok(cbor_reply)
-                } else {
-                    let lcbore = LocalCborErr::new("Unsupported backend");
-                    Err(warp::reject::custom(lcbore))
+                // a backend - by consumption
+                let mut kcl = available_contracts.lock().await;
+                let new_contracts_list: Option<Vec<KeepContract>> =
+                    consume_contract(kcl.clone(), &keepcontract);
+                match new_contracts_list {
+                    Some(ncl) => {
+                        //a returned contract list means that we were successful
+                        println!(
+                            "Received a request for an available Contract uuid= {:?}",
+                            keepcontract.uuid
+                        );
+                        let mut kll = keeplist.lock().await;
+                        println!(
+                            "Keeplist currently has {} entries, about to add {}",
+                            kll.len(),
+                            keepcontract.uuid,
+                        );
+                        let new_keep = new_keep(keepcontract);
+                        kll.push(new_keep.clone());
+                        //replace old list of available contracts with updated one
+                        *kcl = ncl;
+                        //available_contracts = Arc::new(Mutex::new(Vec::new())).push(ncl);
+                        //TODO - repopulate (with one of the same type?)
+                        let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
+                        let cbor_reply: CborReply = CborReply {
+                            msg: cbor_reply_body,
+                        };
+                        Ok(cbor_reply)
+                    }
+                    None => {
+                        println!("Unsupported contract requested");
+                        let lcbore = LocalCborErr::new("No such contract");
+                        Err(warp::reject::custom(lcbore))
+                    }
                 }
             }
             Err(e) => {

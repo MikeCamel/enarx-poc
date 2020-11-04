@@ -42,17 +42,21 @@ fn main() {
     //for a particular keepmgr, retrieve list of available contracts
     let keepcontracts: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
     println!();
-    for i in 0..keepcontracts.len() {
-        println!(
-            "Contract available for a {} Keep, uuid = {:?}",
-            keepcontracts[i].backend.as_str(),
-            keepcontracts[i].uuid
-        );
+    if keepcontracts.len() == 0 {
+        println!("No contracts available");
+    } else {
+        for i in 0..keepcontracts.len() {
+            println!(
+                "Contract available for a {} Keep, uuid = {:?}",
+                keepcontracts[i].backend.as_str(),
+                keepcontracts[i].uuid
+            );
+        }
+        println!();
+        println!("We will create one of each");
     }
 
     //create keeps
-    println!();
-    println!("We will create one of each");
     for contract in keepcontracts.iter() {
         let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
         println!(
@@ -61,6 +65,21 @@ fn main() {
             keep_result.backend.as_str()
         );
         println!();
+    }
+
+    //TEST - re-check availability of contracts
+    //for a particular keepmgr, retrieve list of available contracts
+    let keepcontracts2: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
+    println!();
+    if keepcontracts2.len() == 0 {
+        println!("No contracts available");
+    }
+    for i in 0..keepcontracts2.len() {
+        println!(
+            "Contract available for a {} Keep, uuid = {:?}",
+            keepcontracts2[i].backend.as_str(),
+            keepcontracts2[i].uuid
+        );
     }
 
     //perform attestation
