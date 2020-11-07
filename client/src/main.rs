@@ -65,6 +65,13 @@ fn main() {
             keep_result.backend.as_str()
         );
         println!();
+        //TEST: connect to specific keep
+        let comms_complete: CommsComplete = test_keep_connection(&keepmgr, &keep_result).unwrap();
+        match comms_complete {
+            Success => println!("Success connecting to {}", &keep_result.kuuid),
+            Failure => println!("Failure connecting to {}", &keep_result.kuuid),
+        }
+        println!("");
     }
 
     //TEST - re-check availability of contracts
@@ -162,6 +169,30 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
 
 pub fn attest_keep(_keep: &Keep) -> Result<bool, String> {
     Err("Unimplemented".to_string())
+}
+
+pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsComplete, String> {
+    let keep_mgr_url = format!(
+        "http://{}:{}/keep/{}",
+        keepmgr.ipaddr, keepmgr.port, keep.kuuid
+    );
+    println!("About to connect on {}", keep_mgr_url);
+
+    let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
+        .build()
+        .unwrap()
+        .post(&keep_mgr_url)
+        .send()
+        .expect("Problem connecting to keep");
+
+    let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
+    match contractvec_response {
+        Ok(cc) => Ok(cc),
+        Err(e) => {
+            println!("Problem with keep response {}", e);
+            Err("Error with response".to_string())
+        }
+    }
 }
 
 pub fn get_keep_wasmldr_info(_keep: &Keep) -> Result<Wasmldr, String> {

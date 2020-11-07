@@ -18,6 +18,7 @@
 
 use koine::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use uuid::Uuid;
 use warp::Filter;
 
 #[tokio::main]
@@ -45,20 +46,36 @@ async fn main() {
         )
     });
 
+    //list available contracts
     let list_contracts = warp::post()
         .and(warp::path("contracts"))
         .and(filters::with_contractlist(contractlist.clone()))
         .and_then(filters::list_contracts);
 
+    //manage new keep requests
     let new_keep_post = warp::post()
         .and(warp::path("new_keep"))
         .and(warp::body::aggregate())
-        .and(filters::with_contractlist(contractlist))
-        .and(filters::with_keeplist(keeplist))
+        .and(filters::with_contractlist(contractlist.clone()))
+        .and(filters::with_keeplist(keeplist.clone()))
         .and_then(filters::new_keep_parse);
 
-    let routes = list_contracts.or(new_keep_post).or(declare);
-    //    let routes = list_contracts.or(declare);
+    //manage communications from clients to keeps, by uuid
+    //FIXME - not working properly at the moment
+    let keep_comms_by_uuid = warp::post()
+        .and(warp::path("keep"))
+        .and(warp::path::param())
+        .map(|uuid: Uuid| uuid)
+        //.map(|uuid_str: String| uuid_str)
+        //.map(|uuid: Uuid| println!("Uuid query received {:?}", uuid))
+        //        .map(warp::reply);
+        //.and_then(filters::keep_by_uuid);
+        .and_then(filters::test);
+
+    let routes = list_contracts
+        .or(new_keep_post)
+        .or(keep_comms_by_uuid)
+        .or(declare);
     println!(
         "Starting server on {}, {} v{}",
         BIND_PORT, PROTO_NAME, PROTO_VERSION
@@ -81,7 +98,8 @@ mod models {
     pub async fn populate_available_backends() -> Vec<Backend> {
         let mut available_backends = Vec::new();
         //add backends - assume both KVM and Nil backends ("nil") are available
-        //TODO - add checks for SEV and SGX
+        //TODO - add checks for SEV and SGX - use glob on
+        // /dev/sev & /dev/sgx/enclave
         available_backends.push(Backend::Nil);
         available_backends.push(Backend::Kvm);
         available_backends
@@ -129,7 +147,7 @@ mod filters {
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
-    use uuid::Uuid;
+    use uuid::{Builder, Uuid};
     use warp::Filter;
 
     //pub fn new_keep(backend: Backend) -> Keep {
@@ -239,6 +257,47 @@ mod filters {
         contractlist: ContractList,
     ) -> impl Filter<Extract = (ContractList,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || contractlist.clone())
+    }
+
+    //-----
+    //    pub async fn test(my_string: String) -> Result<impl warp::Reply, warp::Rejection> {
+    pub async fn test(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
+        //let uuid_str: Uuid = Uuid::parse_str(&uuid_str).unwrap();
+        println!(
+            "Received communications request for comms with Keep, uuid = {}",
+            uuid,
+        );
+        let comms_complete = CommsComplete::Success;
+
+        let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
+        let cbor_reply: CborReply = CborReply {
+            msg: cbor_reply_body,
+        };
+        Ok(cbor_reply)
+    }
+
+    //-----
+    //pub async fn keep_by_uuid(uuid_str: String) -> Result<impl warp::Reply, warp::Rejection> {
+    pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
+        //pub async fn keep_by_uuid(param: ParamType) -> Result<impl warp::Reply, warp::Rejection> {
+        //TODO - implement
+        //
+        //this function will set up a Unix domain connection to the Keep, and then
+        // proxy communications between the client and the Keep.  For now, we return
+        // a successful "comms_complete" message to the client
+        //
+        //let uuid: Uuid = Uuid::parse_str(&uuid_str).unwrap();
+        println!(
+            "Received communications request for comms with Keep, uuid = {}",
+            uuid
+        );
+        let comms_complete = CommsComplete::Success;
+
+        let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
+        let cbor_reply: CborReply = CborReply {
+            msg: cbor_reply_body,
+        };
+        Ok(cbor_reply)
     }
 
     pub async fn list_contracts(

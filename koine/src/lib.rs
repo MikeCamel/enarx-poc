@@ -22,6 +22,7 @@ pub enum LoaderState {
 }
 //these are initial values used in existing an PoC implementation,
 // many are expected to be changed
+/*
 pub const KEEP_INFO_COMMAND: &str = "keep-info";
 pub const CONTRACT_COMMAND: &str = "command";
 pub const KEEP_COMMAND: &str = "command";
@@ -32,7 +33,7 @@ pub const KEEP_KUUID: &str = "kuuid";
 pub const KEEP_ARCH: &str = "keep-arch";
 pub const WASMLDR_BIND_PORT_CMD: &str = "wasmldr-bind-port";
 pub const WASMLDR_ADDR_CMD: &str = "wasmldr-addr";
-
+*/
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum Backend {
     Nil,
@@ -91,11 +92,10 @@ pub struct Workload {
     pub human_readable_info: String,
 }
 
-//TODO - rename in favour of cbor, possibly remove
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Command {
-    pub commandtype: String,
-    pub commandcontents: String,
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub enum CommsComplete {
+    Success,
+    Failure,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
