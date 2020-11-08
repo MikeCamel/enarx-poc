@@ -66,11 +66,7 @@ async fn main() {
         .and(warp::path("keep"))
         .and(warp::path::param())
         .map(|uuid: Uuid| uuid)
-        //.map(|uuid_str: String| uuid_str)
-        //.map(|uuid: Uuid| println!("Uuid query received {:?}", uuid))
-        //        .map(warp::reply);
-        //.and_then(filters::keep_by_uuid);
-        .and_then(filters::test);
+        .and_then(filters::keep_by_uuid);
 
     let routes = list_contracts
         .or(new_keep_post)
@@ -90,6 +86,7 @@ async fn main() {
 }
 
 mod models {
+    use glob::glob;
     use koine::*;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -98,10 +95,44 @@ mod models {
     pub async fn populate_available_backends() -> Vec<Backend> {
         let mut available_backends = Vec::new();
         //add backends - assume both KVM and Nil backends ("nil") are available
-        //TODO - add checks for SEV and SGX - use glob on
-        // /dev/sev & /dev/sgx/enclave
-        available_backends.push(Backend::Nil);
-        available_backends.push(Backend::Kvm);
+        match glob(Backend::file_match(&Backend::Nil)) {
+            Ok(f) => {
+                if f.into_iter().count() > 0 {
+                    available_backends.push(Backend::Nil);
+                }
+            }
+            Err(_) => {
+                println!("nil not supported");
+            }
+        }
+        match glob(Backend::file_match(&Backend::Kvm)) {
+            Ok(f) => {
+                if f.into_iter().count() > 0 {
+                    available_backends.push(Backend::Kvm);
+                    match glob(Backend::file_match(&Backend::Sev)) {
+                        Ok(g) => {
+                            if g.into_iter().count() > 0 {
+                                available_backends.push(Backend::Sev);
+                            }
+                        }
+                        Err(_) => {
+                            println!("sev not supported");
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                println!("kvm not supported");
+            }
+        }
+        match glob(Backend::file_match(&Backend::Sgx)) {
+            Ok(f) => {
+                if f.into_iter().count() > 0 {
+                    available_backends.push(Backend::Sgx);
+                }
+            }
+            Err(_) => println!("sgx is not supported"),
+        }
         available_backends
     }
 
@@ -147,7 +178,7 @@ mod filters {
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
-    use uuid::{Builder, Uuid};
+    use uuid::Uuid;
     use warp::Filter;
 
     //pub fn new_keep(backend: Backend) -> Keep {
@@ -259,34 +290,13 @@ mod filters {
         warp::any().map(move || contractlist.clone())
     }
 
-    //-----
-    //    pub async fn test(my_string: String) -> Result<impl warp::Reply, warp::Rejection> {
-    pub async fn test(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
-        //let uuid_str: Uuid = Uuid::parse_str(&uuid_str).unwrap();
-        println!(
-            "Received communications request for comms with Keep, uuid = {}",
-            uuid,
-        );
-        let comms_complete = CommsComplete::Success;
-
-        let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
-        let cbor_reply: CborReply = CborReply {
-            msg: cbor_reply_body,
-        };
-        Ok(cbor_reply)
-    }
-
-    //-----
-    //pub async fn keep_by_uuid(uuid_str: String) -> Result<impl warp::Reply, warp::Rejection> {
     pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
-        //pub async fn keep_by_uuid(param: ParamType) -> Result<impl warp::Reply, warp::Rejection> {
         //TODO - implement
         //
         //this function will set up a Unix domain connection to the Keep, and then
         // proxy communications between the client and the Keep.  For now, we return
         // a successful "comms_complete" message to the client
         //
-        //let uuid: Uuid = Uuid::parse_str(&uuid_str).unwrap();
         println!(
             "Received communications request for comms with Keep, uuid = {}",
             uuid

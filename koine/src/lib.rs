@@ -53,6 +53,17 @@ impl Backend {
     }
 }
 
+impl Backend {
+    pub fn file_match(&self) -> &'static str {
+        match *self {
+            Backend::Nil => "/",
+            Backend::Sev => "/dev/sev",
+            Backend::Sgx => "/dev/sgx/enclave",
+            Backend::Kvm => "/dev/kvm",
+        }
+    }
+}
+
 pub type KeepList = Arc<Mutex<Vec<Keep>>>;
 pub type ContractList = Arc<Mutex<Vec<KeepContract>>>;
 
