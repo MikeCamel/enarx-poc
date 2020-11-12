@@ -24,7 +24,8 @@ use warp::Filter;
 #[tokio::main]
 async fn main() {
     //TODO - remove hard-coded values - will require certificate changes/generation
-    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    //    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let my_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 202));
     let socket = SocketAddr::new(my_addr, BIND_PORT);
 
     let my_info: KeepMgr = KeepMgr {

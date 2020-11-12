@@ -26,8 +26,9 @@ fn main() {
     println!("Keep manager on localhost port 3030 (the default).");
 
     //list available keepmgrs
-    // - currently only localhost supported
-    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    // - currently only localhost supported when using HTTPS
+    //    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let my_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 202));
     let keepmgr = KeepMgr {
         ipaddr: my_addr,
         port: 3030,
@@ -78,21 +79,28 @@ fn main() {
     }
 
     /*
-     //TEST - re-check availability of contracts
-     //for a particular keepmgr, retrieve list of available contracts
-     let keepcontracts2: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
-     println!();
-     if keepcontracts2.len() == 0 {
-         println!("No contracts available");
-     }
-     for i in 0..keepcontracts2.len() {
-         println!(
-             "Contract available for a {} Keep, uuid = {:?}",
-             keepcontracts2[i].backend.as_str(),
-             keepcontracts2[i].uuid
-         );
-     }
+    //TEST - re-check availability of contracts
+    //for a particular keepmgr, retrieve list of available contracts
+    let keepcontracts2: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
+    println!();
+    if keepcontracts2.len() == 0 {
+        println!("No contracts available");
+    }
+    for i in 0..keepcontracts2.len() {
+        println!(
+            "Contract available for a {} Keep, uuid = {:?}",
+            keepcontracts2[i].backend.as_str(),
+            keepcontracts2[i].uuid
+        );
+    }
     */
+    println!();
+    println!("We will attempt to connect to the first Keep and send a wasm workload");
+    println!("Press <Enter>");
+    io::stdin()
+        .read_line(&mut user_input)
+        .expect("Failed to read line");
+
     //use the first result
     if keep_result_vec.len() > 0 {
         let mut chosen_keep = keep_result_vec[0].clone();
