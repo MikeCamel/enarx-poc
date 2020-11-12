@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use http::response::*;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -20,20 +23,7 @@ pub enum LoaderState {
     Shutdown,
     Error,
 }
-//these are initial values used in existing an PoC implementation,
-// many are expected to be changed
-/*
-pub const KEEP_INFO_COMMAND: &str = "keep-info";
-pub const CONTRACT_COMMAND: &str = "command";
-pub const KEEP_COMMAND: &str = "command";
-pub const KEEP_AUTH: &str = "auth-token";
-pub const KEEP_PORT: &str = "keep-port";
-pub const KEEP_ADDR: &str = "keep-addr";
-pub const KEEP_KUUID: &str = "kuuid";
-pub const KEEP_ARCH: &str = "keep-arch";
-pub const WASMLDR_BIND_PORT_CMD: &str = "wasmldr-bind-port";
-pub const WASMLDR_ADDR_CMD: &str = "wasmldr-addr";
-*/
+
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub enum Backend {
     Nil,
@@ -83,6 +73,12 @@ pub struct KeepContract {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct Payload {
+    pub encoding: String,
+    pub contents: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Wasmldr {
     pub wasmldr_ipaddr: String,
     pub wasmldr_port: u16,
@@ -118,6 +114,46 @@ pub struct KeepVec {
 pub struct UndefinedReply {
     pub text: String,
 }
+
+//--------------cbor pieces below
+
+#[derive(Debug)]
+struct CborReply {
+    pub msg: Vec<u8>,
+}
+
+impl warp::reply::Reply for CborReply {
+    fn into_response(self) -> warp::reply::Response {
+        Response::new(self.msg.into())
+    }
+}
+
+#[derive(Debug)]
+struct LocalCborErr {
+    details: String,
+}
+
+impl LocalCborErr {
+    fn new(msg: &str) -> LocalCborErr {
+        LocalCborErr {
+            details: msg.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for LocalCborErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for LocalCborErr {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
+
+impl warp::reject::Reject for LocalCborErr {}
 
 //--------------MIME work below
 

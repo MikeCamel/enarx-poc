@@ -16,6 +16,7 @@ use koine::*;
 use serde_cbor::{from_slice, to_vec};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr};
+use std::path::Path;
 
 //currently only one Keep-Manager and one Keep supported
 fn main() {
@@ -57,6 +58,7 @@ fn main() {
     }
 
     //create keeps
+    let mut keep_result_vec: Vec<Keep> = Vec::new();
     for contract in keepcontracts.iter() {
         let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
         println!(
@@ -68,42 +70,59 @@ fn main() {
         //TEST: connect to specific keep
         let comms_complete: CommsComplete = test_keep_connection(&keepmgr, &keep_result).unwrap();
         match comms_complete {
-            Success => println!("Success connecting to {}", &keep_result.kuuid),
-            Failure => println!("Failure connecting to {}", &keep_result.kuuid),
+            CommsComplete::Success => println!("Success connecting to {}", &keep_result.kuuid),
+            CommsComplete::Failure => println!("Failure connecting to {}", &keep_result.kuuid),
         }
         println!("");
+        keep_result_vec.push(keep_result);
     }
 
-    //TEST - re-check availability of contracts
-    //for a particular keepmgr, retrieve list of available contracts
-    let keepcontracts2: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
-    println!();
-    if keepcontracts2.len() == 0 {
-        println!("No contracts available");
+    /*
+     //TEST - re-check availability of contracts
+     //for a particular keepmgr, retrieve list of available contracts
+     let keepcontracts2: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
+     println!();
+     if keepcontracts2.len() == 0 {
+         println!("No contracts available");
+     }
+     for i in 0..keepcontracts2.len() {
+         println!(
+             "Contract available for a {} Keep, uuid = {:?}",
+             keepcontracts2[i].backend.as_str(),
+             keepcontracts2[i].uuid
+         );
+     }
+    */
+    //use the first result
+    if keep_result_vec.len() > 0 {
+        let mut chosen_keep = keep_result_vec[0].clone();
+        //perform attestation
+        //steps required will depend on backend
+
+        //get certificate from keepldr
+        //get address & port
+        //TODO - if this fails, we need to panic
+
+        match get_keep_wasmldr(&chosen_keep) {
+            Ok(wl) => chosen_keep.wasmldr = Some(wl),
+            Err(e) => panic!("No wasmloader found: {}", e),
+        }
+        //STATE: keep ready for us to connect to it
+
+        //disconnect from keepmgr
+
+        //choose wasm workload
+        let workload: Workload = retrieve_workload().unwrap();
+        //connect to wasmldr via HTTPS
+        // (note validate server against certificate received above)
+
+        //send wasm workload
+        let provision_result = provision_workload(&chosen_keep, &workload);
+        match provision_result {
+            Ok(b) => println!("Successfully sent workload!"),
+            Err(e) => println!("Had a problem with sending workload: {}", e),
+        }
     }
-    for i in 0..keepcontracts2.len() {
-        println!(
-            "Contract available for a {} Keep, uuid = {:?}",
-            keepcontracts2[i].backend.as_str(),
-            keepcontracts2[i].uuid
-        );
-    }
-
-    //perform attestation
-    //steps required will depend on backend
-
-    //get certificate from keepldr
-    //get address & port
-    //STATE: keep ready for us to connect to it
-
-    //disconnect from keepmgr
-
-    //choose wasm workload
-
-    //connect to keepldr via HTTPS
-    // (note validate server against certificate received above)
-
-    //send wasm workload
 }
 
 pub fn list_hosts() -> Result<Vec<KeepMgr>, String> {
@@ -195,10 +214,90 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
     }
 }
 
-pub fn get_keep_wasmldr_info(_keep: &Keep) -> Result<Wasmldr, String> {
-    Err("Unimplemented".to_string())
+pub fn get_keep_wasmldr(keep: &Keep) -> Result<Wasmldr, String> {
+    //TODO - implement correctly
+    // for now, use hardcoded address port (3040)
+    //TODO - remove hardcoding
+    let wasmldr = Wasmldr {
+        wasmldr_ipaddr: "nail".to_string(),
+        wasmldr_port: 3040,
+    };
+    Ok(wasmldr)
 }
 
-pub fn provision_workload(_keep: &Keep, _workload: &Workload) -> Result<bool, String> {
-    Err("Unimplemented".to_string())
+pub fn retrieve_workload() -> Result<Workload, String> {
+    //TODO - add loading of files from command-line
+    let in_path = Path::new("external/return_1.wasm");
+
+    let in_contents = match std::fs::read(in_path) {
+        Ok(in_contents) => {
+            println!("Contents = of {} bytes", &in_contents.len());
+            in_contents
+        }
+        Err(_) => {
+            println!("Failed to read from file");
+            panic!("We have no data to use");
+        }
+    };
+
+    let workload = Workload {
+        human_readable_info: String::from("wasm"),
+        wasm_binary: in_contents,
+    };
+    Ok(workload)
 }
+
+pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, String> {
+    let cbor_msg = to_vec(&workload);
+    let wasmldr: &Wasmldr;
+    match &keep.wasmldr {
+        None => panic!("No details available to connect to wasmldr"),
+        Some(wl) => wasmldr = wl,
+    }
+    /*
+    //add client certificate presentation
+    let client_cert_path: &str = "key-material/client.p12";
+    let mut cert_buf = Vec::new();
+
+    File::open(&client_cert_path)
+        .expect("certificate opening problems")
+        .read_to_end(&mut cert_buf)
+        .expect("certificate file reading problems");
+    //DANGER, DANGER - password hard-coded
+    //DANGER, DANGER - password in clear-text
+    //FIXME, FIXME
+    let pkcs12_client_id = reqwest::Identity::from_pkcs12_der(&cert_buf, "enarx-test")
+        .expect("certificate reading problems");
+     */
+    let connect_uri = format!(
+        "https://{}:{}/payload",
+        wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port
+    );
+    //    let connect_uri = format!("https://192.168.1.202:{}/payload", connect_port);
+
+    //we accept invalid certs here because in the longer term, we will have a mechanism
+    // for finding out what the cert should be dynamically, and adding it, but currently,
+    // we don't know what to expect as cert is dynamically generated and self-signed
+    //TODO: add certs dynamically as part of protocol
+
+    println!("About to send a workload to {}", &connect_uri);
+    //FIXME: move to cbor (which is what enarx-wasmldr is expecting)!
+    let res = reqwest::blocking::Client::builder()
+        .danger_accept_invalid_certs(true)
+        //.identity(pkcs12_client_id)
+        .build()
+        .unwrap()
+        .post(&connect_uri)
+        .body(cbor_msg.unwrap())
+        .send();
+    println!("{:#?}", res);
+    Ok(true)
+}
+
+/*
+    //TEST 1 - localhost:port
+    let connect_uri = format!("https://localhost:{}/payload", connect_port);
+    //TEST 2 - other_add:port
+    //let connect_uri = format!("https://{}:{}/payload", LOCAL_LISTEN_ADDRESS, connect_port);
+
+*/

@@ -233,7 +233,8 @@ mod filters {
         }
         reply_opt
     }
-
+    //these should be taken from koine, but for some reason, are not
+    //FIXME! ----------
     #[derive(Debug)]
     struct CborReply {
         pub msg: Vec<u8>,
@@ -271,6 +272,8 @@ mod filters {
     }
 
     impl warp::reject::Reject for LocalCborErr {}
+
+    //FIXME! ----------
 
     pub fn with_available_backends(
         available_backends: Vec<Backend>,
