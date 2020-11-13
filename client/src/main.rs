@@ -16,9 +16,7 @@ extern crate reqwest;
 use config::*;
 use koine::*;
 use serde_cbor::{from_slice, to_vec};
-use std::collections::HashMap;
 use std::io;
-use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
 //currently only one Keep-Manager and one Keep supported
@@ -48,6 +46,7 @@ fn main() {
 
     println!();
     println!("First we will contact the Keep manager and list available contracts");
+    println!("********************************");
     println!("Press <Enter>");
     io::stdin()
         .read_line(&mut user_input)
@@ -67,9 +66,9 @@ fn main() {
             );
         }
         println!();
-        println!("We will create one of each");
+        println!("We will create one of each supported type");
     }
-
+    println!("********************************");
     println!("Press <Enter>");
     io::stdin()
         .read_line(&mut user_input)
@@ -78,21 +77,33 @@ fn main() {
     //create keeps
     let mut keep_result_vec: Vec<Keep> = Vec::new();
     for contract in keepcontracts.iter() {
-        let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
-        println!(
-            "Received keep, kuuid = {:?}, backend = {}",
-            keep_result.kuuid,
-            keep_result.backend.as_str()
-        );
-        println!();
-        //TEST: connect to specific keep
-        let comms_complete: CommsComplete = test_keep_connection(&keepmgr, &keep_result).unwrap();
-        match comms_complete {
-            CommsComplete::Success => println!("Success connecting to {}", &keep_result.kuuid),
-            CommsComplete::Failure => println!("Failure connecting to {}", &keep_result.kuuid),
+        if settings.get(contract.backend.as_str()).unwrap() {
+            println!("Keeps of type {} are acceptable", contract.backend.as_str());
+
+            let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
+            println!(
+                "Received keep, kuuid = {:?}, backend = {}",
+                keep_result.kuuid,
+                keep_result.backend.as_str()
+            );
+            println!();
+            println!("Connect to the created Keep (for attestation, etc.)");
+            println!("********************************");
+            println!("Press <Enter>");
+            io::stdin()
+                .read_line(&mut user_input)
+                .expect("Failed to read line");
+
+            //TEST: connect to specific keep
+            let comms_complete: CommsComplete =
+                test_keep_connection(&keepmgr, &keep_result).unwrap();
+            match comms_complete {
+                CommsComplete::Success => println!("Success connecting to {}", &keep_result.kuuid),
+                CommsComplete::Failure => println!("Failure connecting to {}", &keep_result.kuuid),
+            }
+            println!("");
+            keep_result_vec.push(keep_result);
         }
-        println!("");
-        keep_result_vec.push(keep_result);
     }
 
     /*
@@ -113,15 +124,16 @@ fn main() {
     */
     println!();
     println!("We will attempt to connect to the first Keep and send a wasm workload");
+    println!("********************************");
     println!("Press <Enter>");
     io::stdin()
         .read_line(&mut user_input)
         .expect("Failed to read line");
 
     //use the first result
-    //    for i in keep_result_vec.len() {
-    if keep_result_vec.len() > 0 {
-        let mut chosen_keep = keep_result_vec[0].clone();
+    for i in 0..keep_result_vec.len() {
+        //  if keep_result_vec.len() > 0 {
+        let mut chosen_keep = keep_result_vec[i].clone();
         //perform attestation
         //steps required will depend on backend
 
@@ -145,7 +157,7 @@ fn main() {
         //send wasm workload
         let provision_result = provision_workload(&chosen_keep, &workload);
         match provision_result {
-            Ok(b) => println!("Successfully sent workload!"),
+            Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
         }
     }
@@ -240,7 +252,7 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
     }
 }
 
-pub fn get_keep_wasmldr(keep: &Keep, settings: &Config) -> Result<Wasmldr, String> {
+pub fn get_keep_wasmldr(_keep: &Keep, settings: &Config) -> Result<Wasmldr, String> {
     //TODO - implement with information passed via keepmgr
     let wasmldr_addr: String = settings.get("wasmldr_address").unwrap();
     let wasmldr_port: u16 = settings.get("wasmldr_port").unwrap();
@@ -308,7 +320,7 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     //TODO: add certs dynamically as part of protocol
 
     println!("About to send a workload to {}", &connect_uri);
-    let res = reqwest::blocking::Client::builder()
+    let _res = reqwest::blocking::Client::builder()
         .danger_accept_invalid_certs(true)
         //.identity(pkcs12_client_id)
         .build()
