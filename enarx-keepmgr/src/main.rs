@@ -17,7 +17,7 @@
 #![deny(clippy::all)]
 
 use koine::*;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use uuid::Uuid;
 use warp::Filter;
 
@@ -25,11 +25,15 @@ use warp::Filter;
 async fn main() {
     //TODO - remove hard-coded values - will require certificate changes/generation
     //    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let my_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 202));
-    let socket = SocketAddr::new(my_addr, BIND_PORT);
+    //    let my_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 202));
+    let my_address = "192.168.1.202".to_string();
+    let full_address = format!("{}:{}", my_address, BIND_PORT);
+    let mut socket = full_address.to_socket_addrs().unwrap().next().unwrap();
+    //let socket = SocketAddr::new(my_address, BIND_PORT);
 
     let my_info: KeepMgr = KeepMgr {
-        ipaddr: my_addr,
+        address: my_address,
+        //        ipaddr: my_addr,
         port: BIND_PORT,
     };
 
@@ -75,7 +79,7 @@ async fn main() {
         .or(declare);
     println!(
         "Starting server on {}, {} v{}",
-        BIND_PORT, PROTO_NAME, PROTO_VERSION
+        &socket, PROTO_NAME, PROTO_VERSION
     );
     warp::serve(routes)
         //removing TLS for now due to certificate issues

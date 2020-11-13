@@ -4,7 +4,7 @@ use http::response::*;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
-use std::net::IpAddr;
+//use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -59,7 +59,8 @@ pub type ContractList = Arc<Mutex<Vec<KeepContract>>>;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KeepMgr {
-    pub ipaddr: IpAddr,
+    //pub ipaddr: IpAddr,
+    pub address: String,
     pub port: u16,
 }
 

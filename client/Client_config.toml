@@ -1,0 +1,9 @@
+keepmgr_address = "nail"
+keepmgr_port = 3030
+wasmldr_address = "nail"
+wasmldr_port = 3040
+workload_path = "external/return_1.wasm"
+nil = true
+kvm = false
+sev = false
+sgx = false
