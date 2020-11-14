@@ -101,7 +101,7 @@ fn main() {
                 CommsComplete::Success => println!("Success connecting to {}", &keep_result.kuuid),
                 CommsComplete::Failure => println!("Failure connecting to {}", &keep_result.kuuid),
             }
-            println!("");
+            println!();
             keep_result_vec.push(keep_result);
         }
     }
@@ -130,9 +130,7 @@ fn main() {
         .read_line(&mut user_input)
         .expect("Failed to read line");
 
-    //use the first result
     for i in 0..keep_result_vec.len() {
-        //  if keep_result_vec.len() > 0 {
         let mut chosen_keep = keep_result_vec[i].clone();
         //perform attestation
         //steps required will depend on backend
@@ -257,8 +255,8 @@ pub fn get_keep_wasmldr(_keep: &Keep, settings: &Config) -> Result<Wasmldr, Stri
     let wasmldr_addr: String = settings.get("wasmldr_address").unwrap();
     let wasmldr_port: u16 = settings.get("wasmldr_port").unwrap();
     let wasmldr = Wasmldr {
-        wasmldr_ipaddr: wasmldr_addr.to_string(),
-        wasmldr_port: wasmldr_port,
+        wasmldr_ipaddr: wasmldr_addr,
+        wasmldr_port,
     };
     Ok(wasmldr)
 }

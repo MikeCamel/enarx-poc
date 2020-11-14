@@ -133,7 +133,7 @@ impl warp::reply::Reply for CborReply {
 struct LocalCborErr {
     details: String,
 }
-
+/*
 impl LocalCborErr {
     fn new(msg: &str) -> LocalCborErr {
         LocalCborErr {
@@ -141,7 +141,7 @@ impl LocalCborErr {
         }
     }
 }
-
+*/
 impl fmt::Display for LocalCborErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.details)
