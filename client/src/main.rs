@@ -12,7 +12,6 @@
 #![deny(clippy::all)]
 extern crate reqwest;
 
-//https://github.com/mehcode/config-rs/tree/master/examples/simple/src
 use config::*;
 use koine::*;
 use serde_cbor::{from_slice, to_vec};
@@ -23,11 +22,8 @@ use std::path::Path;
 fn main() {
     let mut settings = config::Config::default();
     settings
-        // Add in `./Settings.toml`
         .merge(config::File::with_name("Client_config"))
         .unwrap()
-        // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
         .merge(config::Environment::with_prefix("client"))
         .unwrap();
 
@@ -40,7 +36,8 @@ fn main() {
     let keepmgr_addr: String = settings.get("keepmgr_address").unwrap();
     let keepmgr_port: u16 = settings.get("keepmgr_port").unwrap();
     let keepmgr = KeepMgr {
-        address: keepmgr_addr.to_string(),
+        //        address: keepmgr_addr.to_string(),
+        address: keepmgr_addr,
         port: keepmgr_port,
     };
 
@@ -55,14 +52,14 @@ fn main() {
     //for a particular keepmgr, retrieve list of available contracts
     let keepcontracts: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
     println!();
-    if keepcontracts.len() == 0 {
+    if keepcontracts.is_empty() {
         println!("No contracts available");
     } else {
-        for i in 0..keepcontracts.len() {
+        for contract in keepcontracts.iter() {
             println!(
                 "Contract available for a {} Keep, uuid = {:?}",
-                keepcontracts[i].backend.as_str(),
-                keepcontracts[i].uuid
+                contract.backend.as_str(),
+                contract.uuid
             );
         }
         println!();
@@ -130,8 +127,8 @@ fn main() {
         .read_line(&mut user_input)
         .expect("Failed to read line");
 
-    for i in 0..keep_result_vec.len() {
-        let mut chosen_keep = keep_result_vec[i].clone();
+    for keep in keep_result_vec.iter() {
+        let mut chosen_keep = keep.clone();
         //perform attestation
         //steps required will depend on backend
 
@@ -265,7 +262,6 @@ pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
     //TODO - add loading of files from command-line
     let workload_path: String = settings.get("workload_path").unwrap();
     let in_path = Path::new(&workload_path);
-    //    let in_path = Path::new("external/return_1.wasm");
 
     let in_contents = match std::fs::read(in_path) {
         Ok(in_contents) => {

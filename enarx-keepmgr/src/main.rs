@@ -17,7 +17,8 @@
 #![deny(clippy::all)]
 
 use koine::*;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+//use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 use uuid::Uuid;
 use warp::Filter;
 
@@ -28,7 +29,7 @@ async fn main() {
     //    let my_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 202));
     let my_address = "192.168.1.202".to_string();
     let full_address = format!("{}:{}", my_address, BIND_PORT);
-    let mut socket = full_address.to_socket_addrs().unwrap().next().unwrap();
+    let socket = full_address.to_socket_addrs().unwrap().next().unwrap();
     //let socket = SocketAddr::new(my_address, BIND_PORT);
 
     let my_info: KeepMgr = KeepMgr {
@@ -142,7 +143,8 @@ mod models {
     }
 
     pub async fn populate_contracts(
-        available_backends: &Vec<Backend>,
+        //        available_backends: &Vec<Backend>,
+        available_backends: &[Backend],
         keepmgr: &KeepMgr,
     ) -> ContractList {
         let available_contracts = new_empty_contractlist();
@@ -232,7 +234,8 @@ mod filters {
             if consume_contract.uuid == cl[i].uuid {
                 println!("Matching contract with uuid = {}", cl[i].uuid);
                 cl.remove(i);
-                reply_opt = Some(cl.clone());
+                //                reply_opt = Some(cl.clone());
+                reply_opt = Some(cl);
                 break;
             }
         }
@@ -278,14 +281,13 @@ mod filters {
 
     impl warp::reject::Reject for LocalCborErr {}
 
-    //FIXME! ----------
-
-    pub fn with_available_backends(
-        available_backends: Vec<Backend>,
-    ) -> impl Filter<Extract = (Vec<Backend>,), Error = std::convert::Infallible> + Clone {
-        warp::any().map(move || available_backends.clone())
-    }
-
+    /*
+        pub fn with_available_backends(
+            available_backends: Vec<Backend>,
+        ) -> impl Filter<Extract = (Vec<Backend>,), Error = std::convert::Infallible> + Clone {
+            warp::any().map(move || available_backends.clone())
+        }
+    */
     pub fn with_keeplist(
         keeplist: KeepList,
     ) -> impl Filter<Extract = (KeepList,), Error = std::convert::Infallible> + Clone {
