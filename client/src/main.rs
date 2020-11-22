@@ -12,9 +12,14 @@
 #![deny(clippy::all)]
 extern crate reqwest;
 
+//use ciborium::*;
+use ciborium::de::*;
+//use ciborium::ser::Error;
+use ciborium::ser::*;
+
 use config::*;
 use koine::*;
-use serde_cbor::{from_slice, to_vec};
+//use serde_cbor::{from_slice, to_vec};
 use std::io;
 use std::path::Path;
 
@@ -181,7 +186,12 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
         .send()
         .expect("Problem starting keep");
 
-    let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
+    let cbytes: &[u8] = &cbor_response.bytes().unwrap();
+    let crespbytes = cbytes.as_ref();
+    let contractvec_response: Result<Vec<KeepContract>, String> = from_reader(crespbytes).unwrap();
+    //let contractvec_response = crespbytes.from_reader().unwrap();
+
+    //let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
     match contractvec_response {
         Ok(kcvec) => Ok(kcvec),
         Err(e) => {
@@ -192,7 +202,9 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
 }
 
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
-    let cbor_msg = to_vec(&keepcontract);
+    //    let cbor_msg = to_vec(&keepcontract);
+    let mut cbor_msg = Vec::new();
+    into_writer(&keepcontract, &mut cbor_msg).unwrap();
 
     let keep_mgr_url = format!("http://{}:{}/new_keep/", keepmgr.address, keepmgr.port);
     //removing HTTPS for now, due to certificate issues
@@ -205,11 +217,15 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
         .build()
         .unwrap()
         .post(&keep_mgr_url)
-        .body(cbor_msg.unwrap())
+        .body(cbor_msg)
+        //        .body(cbor_msg.unwrap())
         .send()
         .expect("Problem starting keep");
 
-    let keep_response = from_slice(&cbor_response.bytes().unwrap());
+    let kbytes: &[u8] = &cbor_response.bytes().unwrap();
+    let keepbytes = kbytes.as_ref();
+    let keep_response: Result<Keep, String> = from_reader(keepbytes).unwrap();
+    // let keep_response = from_slice(&cbor_response.bytes().unwrap());
     match keep_response {
         Ok(keep) => Ok(keep),
         Err(e) => {
@@ -237,7 +253,10 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
         .send()
         .expect("Problem connecting to keep");
 
-    let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
+    let cbytes: &[u8] = &cbor_response.bytes().unwrap();
+    let crespbytes = cbytes.as_ref();
+    let contractvec_response: Result<CommsComplete, String> = from_reader(crespbytes).unwrap();
+    //    let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
     match contractvec_response {
         Ok(cc) => Ok(cc),
         Err(e) => {
@@ -282,7 +301,10 @@ pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
 }
 
 pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, String> {
-    let cbor_msg = to_vec(&workload);
+    //    let cbor_msg = to_vec(&workload);
+    let mut cbor_msg = Vec::new();
+    into_writer(&workload, &mut cbor_msg).unwrap();
+
     let wasmldr: &Wasmldr;
     match &keep.wasmldr {
         None => panic!("No details available to connect to wasmldr"),
@@ -320,7 +342,8 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         .build()
         .unwrap()
         .post(&connect_uri)
-        .body(cbor_msg.unwrap())
+        //    .body(cbor_msg.unwrap())
+        .body(cbor_msg)
         .send();
     //NOTE - as the wasmldr exits once the payload has been executed, this
     // should actually error out
