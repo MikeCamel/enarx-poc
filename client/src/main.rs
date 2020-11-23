@@ -12,11 +12,8 @@
 #![deny(clippy::all)]
 extern crate reqwest;
 
-//use ciborium::*;
 use ciborium::de::*;
-//use ciborium::ser::Error;
 use ciborium::ser::*;
-
 use config::*;
 use koine::*;
 //use serde_cbor::{from_slice, to_vec};
@@ -189,7 +186,6 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
     let cbytes: &[u8] = &cbor_response.bytes().unwrap();
     let crespbytes = cbytes.as_ref();
     let contractvec_response: Result<Vec<KeepContract>, String> = from_reader(crespbytes).unwrap();
-    //let contractvec_response = crespbytes.from_reader().unwrap();
 
     //let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
     match contractvec_response {
@@ -326,7 +322,7 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         .expect("certificate reading problems");
      */
     let connect_uri = format!(
-        "https://{}:{}/payload",
+        "https://{}:{}/workload",
         wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port
     );
 

@@ -72,13 +72,13 @@ pub struct KeepContract {
     //TODO - add duration of contract availability
     //TODO - add further information
 }
-
+/*
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Payload {
     pub encoding: String,
     pub contents: Vec<u8>,
 }
-
+*/
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Wasmldr {
     pub wasmldr_ipaddr: String,
