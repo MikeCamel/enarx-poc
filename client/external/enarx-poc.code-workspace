@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		}
+	],
+	"settings": {
+		"rocketCode.loginOnStartup": true,
+		"rocketCode.serverUrl": "https://chat.enarx.dev/",
+		"rocketCode.username": "MikeCamel",
+		"telemetry.enableCrashReporter": false,
+		"telemetry.enableTelemetry": false,
+		"git.ignoreLimitWarning": true,
+		"emmet.excludeLanguages": [
+
+			"markdown"
+		]
+	}
+}

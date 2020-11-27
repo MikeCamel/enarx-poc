@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use http::response::*;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt;
+//use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 pub const LOCAL_LISTEN_ADDRESS: &str = "0.0.0.0";
 
-pub const PROTO_VERSION: f32 = 0.1;
+pub const PROTO_VERSION: f32 = 0.2;
 pub const PROTO_NAME: &str = "Enarx-Keep-Manager";
 pub const BIND_PORT: u16 = 3030;
 
@@ -19,42 +23,62 @@ pub enum LoaderState {
     Shutdown,
     Error,
 }
-//these are initial values used in existing an PoC implementation,
-// many are expected to be changed
-pub const KEEP_INFO_COMMAND: &str = "keep-info";
-pub const CONTRACT_COMMAND: &str = "command";
-pub const KEEP_COMMAND: &str = "command";
-pub const KEEP_AUTH: &str = "auth-token";
-pub const KEEP_PORT: &str = "keep-port";
-pub const KEEP_ADDR: &str = "keep-addr";
-pub const KEEP_KUUID: &str = "kuuid";
-pub const KEEP_ARCH: &str = "keep-arch";
-pub const WASMLDR_BIND_PORT_CMD: &str = "wasmldr-bind-port";
-pub const WASMLDR_ADDR_CMD: &str = "wasmldr-addr";
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 pub enum Backend {
     Nil,
     Sev,
     Sgx,
     Kvm,
 }
-pub type KeepList = Arc<Mutex<Vec<Keep>>>;
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KeepMgr {
-    pub ipaddr: String,
-    pub port: u16,
-    pub keeps: Vec<Keep>,
+impl Backend {
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Backend::Nil => "nil",
+            Backend::Sev => "sev",
+            Backend::Sgx => "sgx",
+            Backend::Kvm => "kvm",
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+impl Backend {
+    pub fn file_match(&self) -> &'static str {
+        match *self {
+            Backend::Nil => "/",
+            Backend::Sev => "/dev/sev",
+            Backend::Sgx => "/dev/sgx/enclave",
+            Backend::Kvm => "/dev/kvm",
+        }
+    }
+}
+
+pub type KeepList = Arc<Mutex<Vec<Keep>>>;
+pub type ContractList = Arc<Mutex<Vec<KeepContract>>>;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct KeepMgr {
+    //pub ipaddr: IpAddr,
+    pub address: String,
+    pub port: u16,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KeepContract {
     pub keepmgr: KeepMgr,
     pub backend: Backend,
+    pub uuid: Uuid,
     //TODO - add duration of contract availability
+    //TODO - add further information
 }
-
+/*
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Payload {
+    pub encoding: String,
+    pub contents: Vec<u8>,
+}
+*/
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Wasmldr {
     pub wasmldr_ipaddr: String,
@@ -63,7 +87,7 @@ pub struct Wasmldr {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Keep {
-    pub backend: String,
+    pub backend: Backend,
     pub kuuid: Uuid,
     pub state: LoaderState,
     pub wasmldr: Option<Wasmldr>,
@@ -76,11 +100,10 @@ pub struct Workload {
     pub human_readable_info: String,
 }
 
-//TODO - rename in favour of cbor, possibly remove
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Command {
-    pub commandtype: String,
-    pub commandcontents: String,
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub enum CommsComplete {
+    Success,
+    Failure,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -92,6 +115,46 @@ pub struct KeepVec {
 pub struct UndefinedReply {
     pub text: String,
 }
+
+//--------------cbor pieces below
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CborReply {
+    pub msg: Vec<u8>,
+}
+
+impl warp::reply::Reply for CborReply {
+    fn into_response(self) -> warp::reply::Response {
+        Response::new(self.msg.into())
+    }
+}
+
+#[derive(Debug)]
+struct LocalCborErr {
+    details: String,
+}
+/*
+impl LocalCborErr {
+    fn new(msg: &str) -> LocalCborErr {
+        LocalCborErr {
+            details: msg.to_string(),
+        }
+    }
+}
+*/
+impl fmt::Display for LocalCborErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for LocalCborErr {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
+
+impl warp::reject::Reject for LocalCborErr {}
 
 //--------------MIME work below
 
