@@ -16,26 +16,54 @@
 
 #![deny(clippy::all)]
 
+use config::*;
 use koine::*;
-//use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
-use std::net::ToSocketAddrs;
+use std::net::{SocketAddr, ToSocketAddrs};
 use uuid::Uuid;
 use warp::Filter;
 
 #[tokio::main]
 async fn main() {
-    //TODO - remove hard-coded values - will require certificate changes/generation
-    //    let my_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    //    let my_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 202));
-    let my_address = "192.168.1.202".to_string();
-    let full_address = format!("{}:{}", my_address, BIND_PORT);
-    let socket = full_address.to_socket_addrs().unwrap().next().unwrap();
-    //let socket = SocketAddr::new(my_address, BIND_PORT);
+    
+    let mut settings = config::Config::default();
+    settings
+        .merge(File::with_name("Keepmgr_config"))
+        .unwrap()
+        .merge(Environment::with_prefix("client"))
+        .unwrap();
+
+    let my_address: String = settings.get("keepmgr_address").unwrap();
+    let my_port: u16 = settings.get("keepmgr_port").unwrap();  
+    println!("Address = {}, port = {}", &my_address, &my_port);
+    let full_address = format!("{}:{}", my_address, my_port);
+
+    //initialise to 0.0.0.0 for safety
+    let mut socket = SocketAddr::from(([0, 0, 0, 0], my_port));
+    //let mut addresses = full_address.to_socket_addrs().unwrap();
+    //let mut addresses: SocketAddr;
+    let addresses_res = full_address.to_socket_addrs();    
+    match addresses_res {
+        Ok(mut addresses) => {
+            println!("Got {} sockaddresss", addresses.len());
+            //currently only supporting ipv4 - once we support ipv6,
+            // check for Err, instead
+            while let Some(sock) = addresses.next() {
+                println!("address = {:?}", &sock);
+                if sock.is_ipv4() {
+                    socket = sock;
+                    break;
+                }
+            }        
+        }
+        Err(e) => {
+            panic!("Unable to bind - {}", e);
+        }
+    }
+    assert_ne!(socket, SocketAddr::from(([0, 0, 0, 0], my_port)), "Unable to get address on which to bind");
 
     let my_info: KeepMgr = KeepMgr {
         address: my_address,
-        //        ipaddr: my_addr,
-        port: BIND_PORT,
+        port: my_port,
     };
 
     //find available backends for this host (currently only local - may extend?)
@@ -315,11 +343,14 @@ mod filters {
         );
         let comms_complete = CommsComplete::Success;
 
-        let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
-        let cbor_reply: CborReply = CborReply {
-            msg: cbor_reply_body,
-        };
-        Ok(cbor_reply)
+        //let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
+        let mut cbor_reply_body = Vec::new();
+        into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
+        //let cbor_reply: CborReply = CborReply {
+        //    msg: cbor_reply_body,
+        //};
+        //        Ok(cbor_reply)
+        Ok(cbor_reply_body)
     }
 
     pub async fn list_contracts(
@@ -328,14 +359,57 @@ mod filters {
         println!("About to serve contractlist (from list_contracts())");
         let mut cl = available_contracts.lock().await;
         let cl = &mut *cl;
+
+        let conl: Vec<KeepContract> = cl.to_vec();
+
         println!("Found {} contracts", cl.len());
-        let cbor_reply_body: Vec<u8> = to_vec(&cl).unwrap();
-        let cbor_reply: CborReply = CborReply {
-            msg: cbor_reply_body,
-        };
-        Ok(cbor_reply)
+        println!("KeepContract[0] Uuid = {:?}", cl[0].uuid);
+        println!("KeepContract[0] = {:?}", cl[0]);
+        println!("KeepContract[1] = {:?}", cl[1]);
+        let mut cbor_reply_body = Vec::new();
+        println!("cbor_reply_body len = {}", &cbor_reply_body.len());
+        //        into_writer(&cl, &mut cbor_reply_body).unwrap();
+        into_writer(&conl, &mut cbor_reply_body).unwrap();
+        println!("cbor_reply_body len now = {}", &cbor_reply_body.len());
+        println!("bytes = {:?}", &cbor_reply_body);
+        //------------- TEST
+        let contractvec: Vec<KeepContract> = from_reader(&cbor_reply_body[..]).unwrap();
+        println!("bytes = {:?}", &contractvec);
+        //------------- END TEST
+
+        Ok(cbor_reply_body)
     }
 
+    /*
+
+        pub async fn list_contracts_old(
+            available_contracts: ContractList,
+        ) -> Result<impl warp::Reply, warp::Rejection> {
+            println!("About to serve contractlist (from list_contracts())");
+            let mut cl = available_contracts.lock().await;
+            let cl = &mut *cl;
+            //       let contract_list: Vec<KeepContract> = cl.to_vec();
+            println!("Found {} contracts", cl.len());
+            println!("KeepContract[0] Uuid = {:?}", cl[0].uuid);
+            //let cbor_reply_body: Vec<u8> = to_vec(&cl).unwrap();
+            let mut cbor_reply_body = Vec::new();
+            println!("cbor_reply_body len = {}", &cbor_reply_body.len());
+            //into_writer(&contract_list, &mut cbor_reply_body).unwrap();
+            into_writer(&cl, &mut cbor_reply_body).unwrap();
+            println!("cbor_reply_body len now = {}", &cbor_reply_body.len());
+            println!("bytes = {:?}", &cbor_reply_body);
+            //        let cbor_reply: CborReply = CborReply {
+            //          msg: cbor_reply_body,
+            //    };
+
+            //------------- TEST
+            let contractvec: Vec<KeepContract> = from_reader(&cbor_reply_body[..]).unwrap();
+            println!("bytes = {:?}", &contractvec);
+            //------------- END TEST
+
+            Ok(cbor_reply_body)
+        }
+    */
     pub async fn new_keep_parse<B>(
         bytes: B,
         available_contracts: ContractList,
@@ -345,12 +419,15 @@ mod filters {
         B: hyper::body::Buf,
     {
         //retrieve a Vector of u8 from the received body
-        let mut bytesvec: Vec<u8> = Vec::new();
-        bytesvec.extend_from_slice(bytes.bytes());
-
+        //        let mut bytesvec: Vec<u8> = Vec::new();
+        //      bytesvec.extend_from_slice(bytes.bytes());
+        let kbytes: &[u8] = bytes.bytes();
+        let kcontract_bytes = kbytes.as_ref();
+        let kc_response: Result<KeepContract, String> = from_reader(kcontract_bytes).unwrap();
         //deserialise the Vector into a KeepContract (and handle errors)
         let keepcontract: KeepContract;
-        match de::from_slice(&bytesvec) {
+        match kc_response {
+            //match de::from_slice(&bytesvec) {
             Ok(kc) => {
                 keepcontract = kc;
                 println!("\nnew-keep ...");
@@ -380,7 +457,9 @@ mod filters {
                         *kcl = ncl;
                         //available_contracts = Arc::new(Mutex::new(Vec::new())).push(ncl);
                         //TODO - repopulate (with one of the same type?)
-                        let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
+                        //let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
+                        let mut cbor_reply_body = Vec::new();
+                        into_writer(&new_keep, &mut cbor_reply_body).unwrap();
                         let cbor_reply: CborReply = CborReply {
                             msg: cbor_reply_body,
                         };

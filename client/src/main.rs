@@ -184,17 +184,31 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
         .expect("Problem starting keep");
 
     let cbytes: &[u8] = &cbor_response.bytes().unwrap();
+    println!("cbytes len = {}", cbytes.len());
     let crespbytes = cbytes.as_ref();
-    let contractvec_response: Result<Vec<KeepContract>, String> = from_reader(crespbytes).unwrap();
-
+    println!("crespbytes len = {}", crespbytes.len());
+    println!("bytes = {:?}", &crespbytes);
+    //let contractvec_response: Result<Vec<KeepContract>, String> = from_reader(crespbytes).unwrap();
+    //let contractvec_response = from_reader(crespbytes);
+    let contractvec: Vec<KeepContract> = from_reader(&crespbytes[..]).unwrap();
+    /*
+    //OLD
     //let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
     match contractvec_response {
-        Ok(kcvec) => Ok(kcvec),
+        //let cbor_reply: koine::CborReply = from_reader(crespbytes).unwrap();
+        //match cbor_reply {
+        Ok(kcvec) => {
+            println!("Received valid reply");
+            Ok(kcvec)
+        }
         Err(e) => {
             println!("Problem with keep response {}", e);
             Err("Error with response".to_string())
         }
     }
+     */
+
+    Ok(contractvec)
 }
 
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
@@ -250,7 +264,7 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
         .expect("Problem connecting to keep");
 
     let cbytes: &[u8] = &cbor_response.bytes().unwrap();
-    let crespbytes = cbytes.as_ref();
+    let crespbytes = cbytes ;
     let contractvec_response: Result<CommsComplete, String> = from_reader(crespbytes).unwrap();
     //    let contractvec_response = from_slice(&cbor_response.bytes().unwrap());
     match contractvec_response {

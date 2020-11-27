@@ -29,3 +29,4 @@ uuid =  { version = "0.8", features = ["serde", "v4"] }
 
 koine = { path = "../koine" }
 
+config = "0.10.1"

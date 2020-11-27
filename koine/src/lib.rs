@@ -24,7 +24,7 @@ pub enum LoaderState {
     Error,
 }
 
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 pub enum Backend {
     Nil,
     Sev,
@@ -57,14 +57,14 @@ impl Backend {
 pub type KeepList = Arc<Mutex<Vec<Keep>>>;
 pub type ContractList = Arc<Mutex<Vec<KeepContract>>>;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KeepMgr {
     //pub ipaddr: IpAddr,
     pub address: String,
     pub port: u16,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KeepContract {
     pub keepmgr: KeepMgr,
     pub backend: Backend,
@@ -118,8 +118,8 @@ pub struct UndefinedReply {
 
 //--------------cbor pieces below
 
-#[derive(Debug)]
-struct CborReply {
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CborReply {
     pub msg: Vec<u8>,
 }
 
