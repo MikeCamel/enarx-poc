@@ -8,6 +8,12 @@
 //!     $ cd enarx
 //!     $ cargo build
 //!
+//! # Run
+//! 
+//! Edit Client_config.toml
+//!     $ cargo run
+//!   OR
+//!     $ cargo run <path_to_.wasm_file>
 
 #![deny(clippy::all)]
 extern crate reqwest;
@@ -29,11 +35,16 @@ fn main() {
         .merge(config::Environment::with_prefix("client"))
         .unwrap();
 
-    let mut user_input = String::new();
-    println!("/nWelcome to the Enarx client.");
-    println!("We will step through a number of tests.  First ensure that you are running a");
-    println!("Keep manager on localhost port 3030 (the default).");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    
 
+    let mut user_input = String::new();
+    println!("\nWelcome to the Enarx client.");
+    
+    if args.len() > 0 {
+        settings.set("user_workload", args[0].clone()).unwrap();
+        println!("Received wasm workload {}\n", settings.get_str("user_workload").unwrap());
+    }
     //list available keepmgrs if applicable
     let keepmgr_addr: String = settings.get("keepmgr_address").unwrap();
     let keepmgr_port: u16 = settings.get("keepmgr_port").unwrap();
@@ -41,7 +52,11 @@ fn main() {
         //        address: keepmgr_addr.to_string(),
         address: keepmgr_addr,
         port: keepmgr_port,
-    };
+      };
+    println!("We will step through a number of tests.  First ensure that you are running a");
+    println!("Keep manager on '{}:{}' (as specified in Client_config.toml).", keepmgr.address, keepmgr.port);
+
+  
 
     println!();
     println!("First we will contact the Keep manager and list available contracts");
@@ -289,7 +304,11 @@ pub fn get_keep_wasmldr(_keep: &Keep, settings: &Config) -> Result<Wasmldr, Stri
 
 pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
     //TODO - add loading of files from command-line
-    let workload_path: String = settings.get("workload_path").unwrap();
+    //let workload_path: String = settings.get("workload_path").unwrap();
+    let workload_path: String = match settings.get_str("user_workload") {
+        Ok(user_workload) => user_workload,
+        Err(_) => settings.get("workload_path").unwrap(),
+    };
     let in_path = Path::new(&workload_path);
 
     let in_contents = match std::fs::read(in_path) {
