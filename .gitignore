@@ -3,3 +3,5 @@
 /enarx-keepmgr/target
 /koine/target
 Cargo.lock
+client/external/enarx-poc.code-workspace
+workspace.code-workspace

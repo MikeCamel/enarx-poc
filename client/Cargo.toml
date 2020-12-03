@@ -45,8 +45,6 @@ config = "0.10.1"
 tokio = { version = "0.2", features = ["macros"] }
 warp = { version = "0.2", features = ["tls"] }
 serde = { version = "1.0", features = ["derive"] }
-ciborium = { git = "https://github.com/enarx/ciborium", features = ["serde"] }
-#serde_cbor = "0.10"
-#serde_json = "1.0"
-#cbor = { version = "0.4.1" }
+ciborium = { git = "https://github.com/enarx/ciborium" }
+#ciborium = { path = "../../ciborium", features = ["std"] }
 
