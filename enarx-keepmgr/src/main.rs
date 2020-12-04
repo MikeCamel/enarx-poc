@@ -209,20 +209,16 @@ mod models {
 mod filters {
     use ciborium::de::*;
     use ciborium::ser::*;
-    use http::response::*;
     use koine::*;
-    //    use serde_cbor::{de, to_vec};
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
     use uuid::Uuid;
     use warp::Filter;
 
-    //pub fn new_keep(backend: Backend) -> Keep {
     pub fn new_keep(contract: KeepContract) -> Keep {
         //TODO - consume uuid from contract (this should be passed instead of Backend),
         // then repopulate
-        //        let kuuid = contract.uuid;
         println!("About to spawn new keep-loader");
         let service_cmd = format!(
             "enarx-keep-{}@{}.service",
@@ -271,19 +267,7 @@ mod filters {
         }
         reply_opt
     }
-    //these should be taken from koine, but for some reason, are not
-    //FIXME! ----------
-    #[derive(Debug)]
-    struct CborReply {
-        pub msg: Vec<u8>,
-    }
-
-    impl warp::reply::Reply for CborReply {
-        fn into_response(self) -> warp::reply::Response {
-            Response::new(self.msg.into())
-        }
-    }
-
+    
     #[derive(Debug)]
     struct LocalCborErr {
         details: String,
@@ -371,45 +355,11 @@ mod filters {
         //        into_writer(&cl, &mut cbor_reply_body).unwrap();
         into_writer(&conl, &mut cbor_reply_body).unwrap();
         println!("cbor_reply_body len now = {}", &cbor_reply_body.len());
-        println!("bytes = {:?}", &cbor_reply_body);
-        //------------- TEST
-        let contractvec: Vec<KeepContract> = from_reader(&cbor_reply_body[..]).unwrap();
-        println!("bytes = {:?}", &contractvec);
-        //------------- END TEST
+        //println!("bytes = {:02x?}", &cbor_reply_body);
 
         Ok(cbor_reply_body)
     }
 
-    /*
-
-        pub async fn list_contracts_old(
-            available_contracts: ContractList,
-        ) -> Result<impl warp::Reply, warp::Rejection> {
-            println!("About to serve contractlist (from list_contracts())");
-            let mut cl = available_contracts.lock().await;
-            let cl = &mut *cl;
-            //       let contract_list: Vec<KeepContract> = cl.to_vec();
-            println!("Found {} contracts", cl.len());
-            println!("KeepContract[0] Uuid = {:?}", cl[0].uuid);
-            //let cbor_reply_body: Vec<u8> = to_vec(&cl).unwrap();
-            let mut cbor_reply_body = Vec::new();
-            println!("cbor_reply_body len = {}", &cbor_reply_body.len());
-            //into_writer(&contract_list, &mut cbor_reply_body).unwrap();
-            into_writer(&cl, &mut cbor_reply_body).unwrap();
-            println!("cbor_reply_body len now = {}", &cbor_reply_body.len());
-            println!("bytes = {:?}", &cbor_reply_body);
-            //        let cbor_reply: CborReply = CborReply {
-            //          msg: cbor_reply_body,
-            //    };
-
-            //------------- TEST
-            let contractvec: Vec<KeepContract> = from_reader(&cbor_reply_body[..]).unwrap();
-            println!("bytes = {:?}", &contractvec);
-            //------------- END TEST
-
-            Ok(cbor_reply_body)
-        }
-    */
     pub async fn new_keep_parse<B>(
         bytes: B,
         available_contracts: ContractList,
@@ -419,65 +369,52 @@ mod filters {
         B: hyper::body::Buf,
     {
         //retrieve a Vector of u8 from the received body
-        //        let mut bytesvec: Vec<u8> = Vec::new();
-        //      bytesvec.extend_from_slice(bytes.bytes());
         let kbytes: &[u8] = bytes.bytes();
+        println!("new_keep_parse received {} bytes", kbytes.len());
+        println!("kbytes = {:02x?}", &kbytes);
         let kcontract_bytes = kbytes.as_ref();
-        let kc_response: Result<KeepContract, String> = from_reader(kcontract_bytes).unwrap();
+
+        let keepcontract: KeepContract = from_reader(&kcontract_bytes[..]).unwrap();
+        println!("bytes = {:02x?}", &keepcontract);
+
         //deserialise the Vector into a KeepContract (and handle errors)
-        let keepcontract: KeepContract;
-        match kc_response {
-            //match de::from_slice(&bytesvec) {
-            Ok(kc) => {
-                keepcontract = kc;
-                println!("\nnew-keep ...");
-                //let mut cl = available_contracts.lock().await;
-                //TODO - we need to get the listen address from the Keep later in the process
-                //TODO - change to see whether there's a matching contract, rather than just
-                // a backend - by consumption
-                let mut kcl = available_contracts.lock().await;
-                let new_contracts_list: Option<Vec<KeepContract>> =
-                    consume_contract(kcl.clone(), &keepcontract);
-                match new_contracts_list {
-                    Some(ncl) => {
-                        //a returned contract list means that we were successful
-                        println!(
-                            "Received a request for an available Contract uuid= {:?}",
-                            keepcontract.uuid
-                        );
-                        let mut kll = keeplist.lock().await;
-                        println!(
-                            "Keeplist currently has {} entries, about to add {}",
-                            kll.len(),
-                            keepcontract.uuid,
-                        );
-                        let new_keep = new_keep(keepcontract);
-                        kll.push(new_keep.clone());
-                        //replace old list of available contracts with updated one
-                        *kcl = ncl;
-                        //available_contracts = Arc::new(Mutex::new(Vec::new())).push(ncl);
-                        //TODO - repopulate (with one of the same type?)
-                        //let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
-                        let mut cbor_reply_body = Vec::new();
-                        into_writer(&new_keep, &mut cbor_reply_body).unwrap();
-                        let cbor_reply: CborReply = CborReply {
-                            msg: cbor_reply_body,
-                        };
-                        Ok(cbor_reply)
-                    }
-                    None => {
-                        println!("Unsupported contract requested");
-                        let lcbore = LocalCborErr::new("No such contract");
-                        Err(warp::reject::custom(lcbore))
-                    }
-                }
+        println!("\nnew-keep ...");
+        //TODO - we need to get the listen address from the Keep later in the process
+        //TODO - change to see whether there's a matching contract, rather than just
+        // a backend - by consumption
+        let mut kcl = available_contracts.lock().await;
+        let new_contracts_list: Option<Vec<KeepContract>> =
+            consume_contract(kcl.clone(), &keepcontract);
+        match new_contracts_list {
+            Some(ncl) => {
+                //a returned contract list means that we were successful
+                println!(
+                    "Received a request for an available Contract uuid= {:?}",
+                    keepcontract.uuid
+                );
+                let mut kll = keeplist.lock().await;
+                println!(
+                    "Keeplist currently has {} entries, about to add {}",
+                    kll.len(),
+                    keepcontract.uuid,
+                );
+                let new_keep = new_keep(keepcontract);
+                kll.push(new_keep.clone());
+                //replace old list of available contracts with updated one
+                *kcl = ncl;
+                //available_contracts = Arc::new(Mutex::new(Vec::new())).push(ncl);
+                //TODO - repopulate (with one of the same type?)
+                //let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
+                let mut cbor_reply_body = Vec::new();
+                into_writer(&new_keep, &mut cbor_reply_body).unwrap();
+                 Ok(cbor_reply_body)
             }
-            Err(e) => {
-                let lcbore = LocalCborErr {
-                    details: e.to_string(),
-                };
+            None => {
+                println!("Unsupported contract requested");
+                let lcbore = LocalCborErr::new("No such contract");
                 Err(warp::reject::custom(lcbore))
             }
         }
+        
     }
 }
