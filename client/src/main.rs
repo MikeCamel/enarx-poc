@@ -24,6 +24,16 @@ use config::*;
 use koine::*;
 use std::io;
 use std::path::Path;
+use std::convert::TryFrom;
+use std::os::unix::net::UnixStream;
+
+use enarx-keepldr::sev::certs::{ca, sev};
+use enarx-keepldr::sev::launch::Policy;
+use enarx-keepldr::sev::session::Session;
+use ciborium::{de::from_reader, ser::into_writer};
+use codicon::{Decoder, Encoder};
+use koine::attestation::sev::*;
+
 
 //currently only one Keep-Manager and one Keep supported
 fn main() {
@@ -107,9 +117,14 @@ fn main() {
                 .read_line(&mut user_input)
                 .expect("Failed to read line");
 
-            //TEST: connect to specific keep
-            let comms_complete: CommsComplete =
-                test_keep_connection(&keepmgr, &keep_result).unwrap();
+            let comms_complete: CommsComplete;
+            if keep_result.backend == Backend::Sev {
+                //pre-attestation required
+                comms_complete = attest_keep(&keepmgr, &keep_result).unwrap();
+            } else {
+                //TEST: connect to specific keep
+                comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
+            }
             match comms_complete {
                 CommsComplete::Success => println!("Success connecting to {}", &keep_result.kuuid),
                 CommsComplete::Failure => println!("Failure connecting to {}", &keep_result.kuuid),
@@ -144,6 +159,7 @@ fn main() {
         .expect("Failed to read line");
 
     for keep in keep_result_vec.iter() {
+
         let mut chosen_keep = keep.clone();
         //perform attestation
         //steps required will depend on backend
@@ -171,6 +187,7 @@ fn main() {
             Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
         }
+        println!("Ready for next keep?");
     }
 }
 
@@ -238,8 +255,16 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     Ok(keep)
 }
 
-pub fn attest_keep(_keep: &Keep) -> Result<bool, String> {
-    Err("Unimplemented".to_string())
+pub fn attest_keep(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsComplete, String> {
+    if keep.backend == Backend::Sev {
+        let keep_mgr_url = format!(
+            "http://{}:{}/keep/{}",
+            keepmgr.address, keepmgr.port, keep.kuuid
+        );
+        sev_pre_attest(keep_mgr_url, keep)
+    } else {
+    Err(format!("Unimplemented for {}", keep.backend.as_str()))
+    }
 }
 
 pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsComplete, String> {
@@ -351,3 +376,6 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     Ok(true)
 }
 
+pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete, String> {
+    Err(format!("Failure"))
+}
