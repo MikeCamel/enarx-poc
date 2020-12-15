@@ -16,14 +16,6 @@ The components with a * are RESTful.
 
 # Objects
 
-### CborReply
-NOTE - I think this is irrelevant for the description.  Remove?
-The **CborReply** is the wrapper object for all HTTPS responses, which are then
-cast to the appropriate object.
-{
-    "msg": Vec<**u8**>,
-}
-
 ### LocalCBorErr
 {
 	"details": **String**,
@@ -140,8 +132,7 @@ from the Keep Manager.
 
 POST [empty BODY]
 REPLY:
-- **CborReply** containing
-  - **ContractList**
+- **ContractList**
 
 ### /new_keep/[uuid]
 The new_keep endpoint allows the **client** to request the creation of a new **Keep**.
@@ -150,8 +141,7 @@ to the **client**
 POST: /new_keep/
 - BODY: **KeepContract**
 REPLY:
-- **CborReply**
-  - **Keep**
+ - **Keep**
 
 ### /keep/[kuuid]
 POST: /keep/[kuuid]/
@@ -162,8 +152,7 @@ depends on the **Keep** backend.
 TODO - links to backend-specific protocol descriptions.
 
 REPLY: 
-- **CborReply**
-  - **Opaque binary data**
+ - **Opaque binary data**
   
 The **Keep Loader** *may* choose to signal to the **Keep Manager** that the 
 communication is complete with a **CommsComplete**.  If this message is received by
@@ -171,8 +160,7 @@ the **Keep Manager**, it *must* forward it to the **client**.
 
 OR
 REPLY: 
-- **CborReply**
-  - **CommsComplete**
+ - **CommsComplete**
   
 ## keepldr
 The **Keep Loader** sets up the **Keep**, managing attestation and other configuration
@@ -181,7 +169,6 @@ requirements.
 ### [tbd]/[uuid] 
 (Over a UNIX domain socket)
 This endpoint allows the **Keep Manager** to communicate with the **Keep Loader**.
-
 
 ## wasmldr
 Each **Keep** has a **Wasm Loader**, instantiated after attestation is complete.  The
@@ -196,4 +183,4 @@ POST: /workload
  - BODY: **Workload**
  
 REPLY: 
-- **CborReply**
+- *TBD*
