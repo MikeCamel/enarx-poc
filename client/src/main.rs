@@ -27,12 +27,21 @@ use std::path::Path;
 use std::convert::TryFrom;
 use std::os::unix::net::UnixStream;
 
-use enarx-keepldr::sev::certs::{ca, sev};
-use enarx-keepldr::sev::launch::Policy;
-use enarx-keepldr::sev::session::Session;
+//use enarx-keepldr::sev::certs::{ca, sev};
+//use enarx-keepldr::sev::launch::Policy;
+//use enarx-keepldr::sev::session::Session;
+//use sev::*;
+use sev::certs::{ca, sev};
+use sev::launch::Policy;
+use sev::session::Session;
+use koine::attestation::sev::*;
+//use ::sev::certs::{ca, sev};
+//use ::sev::launch::Policy;
+//use ::sev::session::Session;
+
 use ciborium::{de::from_reader, ser::into_writer};
 use codicon::{Decoder, Encoder};
-use koine::attestation::sev::*;
+
 
 
 //currently only one Keep-Manager and one Keep supported
@@ -377,5 +386,73 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
 }
 
 pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete, String> {
+    
+    let response = reqwest::blocking::Client::builder()
+        .build()
+        .unwrap()
+        .post(&keepmgr_url)
+        .send()
+        .expect("Problem connecting to keep");
+    //let cbytes: &[u8] = &response.bytes().unwrap();
+    //let crespbytes = cbytes ;\
+    let crespbytes = &response.bytes().unwrap();
+    let chain_packet: Message = from_reader(&crespbytes[..]).unwrap();
+    //let chain_packet =
+    //    from_reader(&*crespbytes.expect("failed to deserialize expected certificate chain");
+    let chain_packet = match chain_packet {
+        Message::CertificateChainNaples(chain) => chain,
+        Message::CertificateChainRome(chain) => chain,
+        _ => panic!("expected certificate chain"),
+    };
+    
+    let chain = sev::certs::Chain {
+        ca: Chain {
+            ark: ca::Certificate::decode(chain_packet.ark.as_slice(), ()).expect("ark"),
+            ask: ca::Certificate::decode(chain_packet.ask.as_slice(), ()).expect("ask"),
+        },
+        sev: Chain {
+            pdh: sev::Certificate::decode(chain_packet.pdh.as_slice(), ()).expect("pdh"),
+            pek: sev::Certificate::decode(chain_packet.pek.as_slice(), ()).expect("pek"),
+            cek: sev::Certificate::decode(chain_packet.cek.as_slice(), ()).expect("cek"),
+            oca: sev::Certificate::decode(chain_packet.oca.as_slice(), ()).expect("oca"),
+        },
+    };
+    
+    let policy = Policy::default();
+    let session = Session::try_from(policy).expect("failed to craft policy");
+    
+    let start = session.start(chain).expect("failed to start session");
+    let mut ls = LaunchStart {
+        policy: vec![],
+        cert: vec![],
+        session: vec![],
+    };
+    into_writer(&start.policy, &mut ls.policy).expect("failed to serialize policy");
+    start
+        .cert
+        .encode(&mut ls.cert, ())
+        .expect("start cert encode");
+    into_writer(&start.session, &mut ls.session).expect("failed to serialize session");
+    
+    let start_packet = Message::LaunchStart(ls);
+    //TODO - send this using reqwest body
+    into_writer(&start_packet, &sock).expect("failed to serialize launch start");
+    
+    //FIXME - we _do_ care!
+    // Discard the measurement, the synthetic client doesn't care
+    // for an unattested launch.
+    //TODO - get a response back
+    let msr = from_reader(&sock).expect("failed to deserialize expected measurement packet");
+    assert!(matches!(msr, Message::Measurement(_)));
+    
+    let secret_packet = Message::Secret(vec![]);
+    //TODO - send this using reqwest body
+    into_writer(&secret_packet, &sock).expect("failed to serialize secret packet");
+    
+    //TODO - get a response back
+    let fin = from_reader(&sock).expect("failed to deserialize expected finish packet");
+    assert!(matches!(fin, Message::Finish(_)));
+    
+    //FIXME
     Err(format!("Failure"))
 }
