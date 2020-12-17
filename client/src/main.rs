@@ -31,9 +31,9 @@ use std::os::unix::net::UnixStream;
 //use enarx-keepldr::sev::launch::Policy;
 //use enarx-keepldr::sev::session::Session;
 //use sev::*;
-use sev::certs::{ca, sev};
-use sev::launch::Policy;
-use sev::session::Session;
+//use sev::certs::{ca, sev};
+//use sev::launch::Policy;
+//use sev::session::Session;
 use koine::attestation::sev::*;
 //use ::sev::certs::{ca, sev};
 //use ::sev::launch::Policy;
@@ -405,21 +405,21 @@ pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete,
         _ => panic!("expected certificate chain"),
     };
     
-    let chain = sev::certs::Chain {
-        ca: Chain {
-            ark: ca::Certificate::decode(chain_packet.ark.as_slice(), ()).expect("ark"),
-            ask: ca::Certificate::decode(chain_packet.ask.as_slice(), ()).expect("ask"),
+    let chain = ::sev::certs::Chain {
+        ca: ::sev::certs::ca::Chain {
+            ark: ::sev::certs::ca::Certificate::decode(chain_packet.ark.as_slice(), ()).expect("ark"),
+            ask: ::sev::certs::ca::Certificate::decode(chain_packet.ask.as_slice(), ()).expect("ask"),
         },
-        sev: Chain {
-            pdh: sev::Certificate::decode(chain_packet.pdh.as_slice(), ()).expect("pdh"),
-            pek: sev::Certificate::decode(chain_packet.pek.as_slice(), ()).expect("pek"),
-            cek: sev::Certificate::decode(chain_packet.cek.as_slice(), ()).expect("cek"),
-            oca: sev::Certificate::decode(chain_packet.oca.as_slice(), ()).expect("oca"),
+        sev: ::sev::certs::sev::Chain {
+            pdh: ::sev::certs::sev::Certificate::decode(chain_packet.pdh.as_slice(), ()).expect("pdh"),
+            pek: ::sev::certs::sev::Certificate::decode(chain_packet.pek.as_slice(), ()).expect("pek"),
+            cek: ::sev::certs::sev::Certificate::decode(chain_packet.cek.as_slice(), ()).expect("cek"),
+            oca: ::sev::certs::sev::Certificate::decode(chain_packet.oca.as_slice(), ()).expect("oca"),
         },
     };
     
-    let policy = Policy::default();
-    let session = Session::try_from(policy).expect("failed to craft policy");
+    let policy = ::sev::launch::Policy::default();
+    let session = ::sev::session::Session::try_from(policy).expect("failed to craft policy");
     
     let start = session.start(chain).expect("failed to start session");
     let mut ls = LaunchStart {
