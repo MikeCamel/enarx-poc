@@ -9,7 +9,7 @@
 //!     $ cargo build
 //!
 //! # Run
-//! 
+//!
 //! Edit Client_config.toml
 //!     $ cargo run
 //!   OR
@@ -22,10 +22,10 @@ use ciborium::de::*;
 use ciborium::ser::*;
 use config::*;
 use koine::*;
-use std::io;
-use std::path::Path;
 use std::convert::TryFrom;
+use std::io;
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 
 //use enarx-keepldr::sev::certs::{ca, sev};
 //use enarx-keepldr::sev::launch::Policy;
@@ -42,8 +42,6 @@ use koine::attestation::sev::*;
 use ciborium::{de::from_reader, ser::into_writer};
 use codicon::{Decoder, Encoder};
 
-
-
 //currently only one Keep-Manager and one Keep supported
 fn main() {
     let mut settings = config::Config::default();
@@ -54,14 +52,16 @@ fn main() {
         .unwrap();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    
 
     let mut user_input = String::new();
     println!("\nWelcome to the Enarx client.");
-    
+
     if args.len() > 0 {
         settings.set("user_workload", args[0].clone()).unwrap();
-        println!("Received wasm workload {}\n", settings.get_str("user_workload").unwrap());
+        println!(
+            "Received wasm workload {}\n",
+            settings.get_str("user_workload").unwrap()
+        );
     }
     //list available keepmgrs if applicable
     let keepmgr_addr: String = settings.get("keepmgr_address").unwrap();
@@ -70,11 +70,12 @@ fn main() {
         //        address: keepmgr_addr.to_string(),
         address: keepmgr_addr,
         port: keepmgr_port,
-      };
+    };
     println!("We will step through a number of tests.  First ensure that you are running a");
-    println!("Keep manager on '{}:{}' (as specified in Client_config.toml).", keepmgr.address, keepmgr.port);
-
-  
+    println!(
+        "Keep manager on '{}:{}' (as specified in Client_config.toml).",
+        keepmgr.address, keepmgr.port
+    );
 
     println!();
     println!("First we will contact the Keep manager and list available contracts");
@@ -168,7 +169,6 @@ fn main() {
         .expect("Failed to read line");
 
     for keep in keep_result_vec.iter() {
-
         let mut chosen_keep = keep.clone();
         //perform attestation
         //steps required will depend on backend
@@ -227,7 +227,7 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
     println!("cbytes len = {}", cbytes.len());
     let crespbytes = cbytes.as_ref();
     let contractvec: Vec<KeepContract> = from_reader(&crespbytes[..]).unwrap();
-    
+
     Ok(contractvec)
 }
 
@@ -235,7 +235,6 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     //    let cbor_msg = to_vec(&keepcontract);
     let mut cbor_msg = Vec::new();
     into_writer(&keepcontract, &mut cbor_msg).unwrap();
-
 
     let keep_mgr_url = format!("http://{}:{}/new_keep/", keepmgr.address, keepmgr.port);
     //removing HTTPS for now, due to certificate issues
@@ -272,7 +271,7 @@ pub fn attest_keep(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsComplete, Stri
         );
         sev_pre_attest(keep_mgr_url, keep)
     } else {
-    Err(format!("Unimplemented for {}", keep.backend.as_str()))
+        Err(format!("Unimplemented for {}", keep.backend.as_str()))
     }
 }
 
@@ -291,7 +290,7 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
         .expect("Problem connecting to keep");
 
     let cbytes: &[u8] = &cbor_response.bytes().unwrap();
-    let crespbytes = cbytes ;
+    let crespbytes = cbytes;
     let response: CommsComplete = from_reader(crespbytes).unwrap();
     Ok(response)
 }
@@ -386,73 +385,181 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
 }
 
 pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete, String> {
-    
+    //FIXME!!!!!
+    const DIGEST: [u8; 32] = [
+        171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178,
+        74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,
+    ];
+
+    const CLEARTEXT: &'static str = "\
+Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!\
+Hello World!!Hello World!\
+";
+
     let response = reqwest::blocking::Client::builder()
         .build()
         .unwrap()
         .post(&keepmgr_url)
         .send()
         .expect("Problem connecting to keep");
-    //let cbytes: &[u8] = &response.bytes().unwrap();
-    //let crespbytes = cbytes ;\
     let crespbytes = &response.bytes().unwrap();
     let chain_packet: Message = from_reader(&crespbytes[..]).unwrap();
-    //let chain_packet =
-    //    from_reader(&*crespbytes.expect("failed to deserialize expected certificate chain");
+
     let chain_packet = match chain_packet {
         Message::CertificateChainNaples(chain) => chain,
         Message::CertificateChainRome(chain) => chain,
         _ => panic!("expected certificate chain"),
     };
-    
+
     let chain = ::sev::certs::Chain {
         ca: ::sev::certs::ca::Chain {
-            ark: ::sev::certs::ca::Certificate::decode(chain_packet.ark.as_slice(), ()).expect("ark"),
-            ask: ::sev::certs::ca::Certificate::decode(chain_packet.ask.as_slice(), ()).expect("ask"),
+            ark: ::sev::certs::ca::Certificate::decode(chain_packet.ark.as_slice(), ())
+                .expect("ark"),
+            ask: ::sev::certs::ca::Certificate::decode(chain_packet.ask.as_slice(), ())
+                .expect("ask"),
         },
         sev: ::sev::certs::sev::Chain {
-            pdh: ::sev::certs::sev::Certificate::decode(chain_packet.pdh.as_slice(), ()).expect("pdh"),
-            pek: ::sev::certs::sev::Certificate::decode(chain_packet.pek.as_slice(), ()).expect("pek"),
-            cek: ::sev::certs::sev::Certificate::decode(chain_packet.cek.as_slice(), ()).expect("cek"),
-            oca: ::sev::certs::sev::Certificate::decode(chain_packet.oca.as_slice(), ()).expect("oca"),
+            pdh: ::sev::certs::sev::Certificate::decode(chain_packet.pdh.as_slice(), ())
+                .expect("pdh"),
+            pek: ::sev::certs::sev::Certificate::decode(chain_packet.pek.as_slice(), ())
+                .expect("pek"),
+            cek: ::sev::certs::sev::Certificate::decode(chain_packet.cek.as_slice(), ())
+                .expect("cek"),
+            oca: ::sev::certs::sev::Certificate::decode(chain_packet.oca.as_slice(), ())
+                .expect("oca"),
         },
     };
-    
+
     let policy = ::sev::launch::Policy::default();
     let session = ::sev::session::Session::try_from(policy).expect("failed to craft policy");
-    
+
+    //from https://gist.github.com/haraldh/9ef6f03987e9c22d9ee41f2ca88e55ad
+
     let start = session.start(chain).expect("failed to start session");
     let mut ls = LaunchStart {
         policy: vec![],
         cert: vec![],
         session: vec![],
     };
-    into_writer(&start.policy, &mut ls.policy).expect("failed to serialize policy");
+
+    ciborium::ser::into_writer(&start.policy, &mut ls.policy).expect("failed to serialize policy");
     start
         .cert
         .encode(&mut ls.cert, ())
         .expect("start cert encode");
     into_writer(&start.session, &mut ls.session).expect("failed to serialize session");
-    
+
+    let start = session.start(chain).expect("failed to start session");
+    let mut ls = LaunchStart {
+        policy: vec![],
+        cert: vec![],
+        session: vec![],
+    };
+    //serde_flavor::to_writer(&mut ls.policy, &start.policy).expect("failed to serialize policy");
+    ciborium::ser::into_writer(&mut ls.policy, &start.policy).expect("failed to serialize policy");
+    start
+        .cert
+        .encode(&mut ls.cert, ())
+        .expect("start cert encode");
+    //serde_flavor::to_writer(&mut ls.session, &start.session).expect("failed to serialize session");
+    ciborium::ser::into_writer(&mut ls.session, &start.session)
+        .expect("failed to serialize session");
+
+    let start_packet = Message::LaunchStart(ls);
+    //TODO - use reqwest
+    //    serde_flavor::to_writer(&sock, &start_packet).expect("failed to serialize launch start");
+    let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
+        //removing HTTPS for now, due to certificate issues
+        //.danger_accept_invalid_certs(true)
+        .build()
+        .unwrap()
+        .post(&keepmgr_url)
+        //TODO - check this is already CBORred
+        .body(start_packet)
+        .send()
+        .expect("Problem starting keep");
+    let crespbytes = &response.bytes().unwrap();
+    let msr: Message = from_reader(&crespbytes[..]).unwrap();
+
+    //let msr =
+    //    Message::deserialize(&mut de).expect("failed to deserialize expected measurement packet");
+    assert!(matches!(msr, Message::Measurement(_)));
+
+    let secret_packet = if let Message::Measurement(msr) = msr {
+        let build: ::sev::Build =
+            //serde_flavor::from_slice(&msr.build).expect("failed to deserialize build");
+            from_slice(&msr.build).expect("failed to deserialize build");
+
+        let measurement: ::sev::launch::Measurement =
+            //serde_flavor::from_slice(&msr.measurement).expect("failed to deserialize measurement");
+            from_slice(&msr.measurement).expect("failed to deserialize measurement");
+
+        let session = session
+            .verify(&DIGEST, build, measurement)
+            .expect("verify failed");
+
+        let ct_vec = CLEARTEXT.as_bytes().to_vec();
+        let mut ct_enc = Vec::new();
+        //serde_flavor::ser::to_writer(&mut ct_enc, &serde_cbor::value::Value::Bytes(ct_vec))
+        ciborium::ser::into_writer(&mut ct_enc, &serde_cbor::value::Value::Bytes(ct_vec))
+            .expect("failed to encode secret");
+
+        let secret = session
+            .secret(::sev::launch::HeaderFlags::default(), &ct_enc)
+            .expect("gen_secret failed");
+
+        println!("Sent secret: {:?}", CLEARTEXT);
+        println!("Sent secret len: {}", ct_enc.len());
+
+        //let s_enc = serde_flavor::to_vec(&secret).expect("failed to serialize secret to vector");
+        let s_enc = to_vec(&secret).expect("failed to serialize secret to vector");
+
+        Message::Secret(s_enc)
+    } else {
+        Message::Secret(vec![])
+    };
+
+    let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
+        //removing HTTPS for now, due to certificate issues
+        //.danger_accept_invalid_certs(true)
+        .build()
+        .unwrap()
+        .post(&keepmgr_url)
+        //TODO - check this is already CBORred
+        .body(secret_packet)
+        .send()
+        .expect("Problem starting keep");
+    let crespbytes = &response.bytes().unwrap();
+    let fin: Message = from_reader(&crespbytes[..]).unwrap();
+
+    //serde_flavor::to_writer(&sock, &secret_packet).expect("failed to serialize secret packet");
+    //let fin = Message::deserialize(&mut de).expect("failed to deserialize expected finish packet");
+    assert!(matches!(fin, Message::Finish(_)));
+    //FIXME
+    Err(format!("Failure"))
+
+    /*
+    //OLD - from connor
     let start_packet = Message::LaunchStart(ls);
     //TODO - send this using reqwest body
     into_writer(&start_packet, &sock).expect("failed to serialize launch start");
-    
+
     //FIXME - we _do_ care!
     // Discard the measurement, the synthetic client doesn't care
     // for an unattested launch.
     //TODO - get a response back
     let msr = from_reader(&sock).expect("failed to deserialize expected measurement packet");
     assert!(matches!(msr, Message::Measurement(_)));
-    
+
     let secret_packet = Message::Secret(vec![]);
     //TODO - send this using reqwest body
     into_writer(&secret_packet, &sock).expect("failed to serialize secret packet");
-    
+
     //TODO - get a response back
     let fin = from_reader(&sock).expect("failed to deserialize expected finish packet");
     assert!(matches!(fin, Message::Finish(_)));
-    
+
     //FIXME
     Err(format!("Failure"))
+    */
 }
