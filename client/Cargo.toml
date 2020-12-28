@@ -33,9 +33,10 @@ codicon = "3.0"
 #anyhow = "1.0"
 #tar = "0.4"
 
-#koine = { path = "../koine" }
-koine = { git = "https://github.com/MikeCamel/koine", branch="poc-dependencies" }
-sev = { git = "https://github.com/enarx/sev", features = ["openssl"] }
+koine = { path = "../../koine" }
+sev = { path = "../../sev", features = ["openssl"] }
+#koine = { git = "https://github.com/MikeCamel/koine", branch="poc-dependencies" }
+
 uuid =  { version = "0.8", features = ["serde", "v4"] }#
 chrono = { version = "0.4.19", features = ["serde"] }
 reqwest = { version = "0.10.7", features = ["blocking", "json", "native-tls"] }

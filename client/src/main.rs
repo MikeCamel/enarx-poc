@@ -18,15 +18,19 @@
 #![deny(clippy::all)]
 extern crate reqwest;
 
-use ciborium::de::*;
-use ciborium::ser::*;
+//use ciborium::de::*;
+//use ciborium::ser::*;
 use config::*;
 use koine::*;
+//use koine::threading::lists::*;
 use std::convert::TryFrom;
 use std::io;
-use std::os::unix::net::UnixStream;
+//use std::os::unix::net::UnixStream;
 use std::path::Path;
 
+use sev::*;
+use sev::launch::Policy;
+use sev::session::Session;
 //use enarx-keepldr::sev::certs::{ca, sev};
 //use enarx-keepldr::sev::launch::Policy;
 //use enarx-keepldr::sev::session::Session;
@@ -40,7 +44,7 @@ use koine::attestation::sev::*;
 //use ::sev::session::Session;
 
 use ciborium::{de::from_reader, ser::into_writer};
-use codicon::{Decoder, Encoder};
+//use codicon::{Decoder, Encoder};
 
 //currently only one Keep-Manager and one Keep supported
 fn main() {
@@ -384,13 +388,15 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     Ok(true)
 }
 
+
 pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete, String> {
-    //FIXME!!!!!
+    //FIXME!!!!! (entire function)
     const DIGEST: [u8; 32] = [
         171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178,
         74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,
     ];
 
+    //TODO - make this a private key
     const CLEARTEXT: &'static str = "\
 Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!\
 Hello World!!Hello World!\
@@ -401,98 +407,44 @@ Hello World!!Hello World!\
         .unwrap()
         .post(&keepmgr_url)
         .send()
-        .expect("Problem connecting to keep");
+    .   expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
-    let chain_packet: Message = from_reader(&crespbytes[..]).unwrap();
-
-    let chain_packet = match chain_packet {
+    
+    //TODO - identify which type of chain?
+    //TODO - error handling
+    let chain_res: Message = from_reader(&crespbytes[..]).unwrap();
+    let chain = match chain_res {
         Message::CertificateChainNaples(chain) => chain,
         Message::CertificateChainRome(chain) => chain,
         _ => panic!("expected certificate chain"),
     };
 
-    let chain = ::sev::certs::Chain {
-        ca: ::sev::certs::ca::Chain {
-            ark: ::sev::certs::ca::Certificate::decode(chain_packet.ark.as_slice(), ())
-                .expect("ark"),
-            ask: ::sev::certs::ca::Certificate::decode(chain_packet.ask.as_slice(), ())
-                .expect("ask"),
-        },
-        sev: ::sev::certs::sev::Chain {
-            pdh: ::sev::certs::sev::Certificate::decode(chain_packet.pdh.as_slice(), ())
-                .expect("pdh"),
-            pek: ::sev::certs::sev::Certificate::decode(chain_packet.pek.as_slice(), ())
-                .expect("pek"),
-            cek: ::sev::certs::sev::Certificate::decode(chain_packet.cek.as_slice(), ())
-                .expect("cek"),
-            oca: ::sev::certs::sev::Certificate::decode(chain_packet.oca.as_slice(), ())
-                .expect("oca"),
-        },
-    };
-
-    let policy = ::sev::launch::Policy::default();
-    let session = ::sev::session::Session::try_from(policy).expect("failed to craft policy");
-
-    //from https://gist.github.com/haraldh/9ef6f03987e9c22d9ee41f2ca88e55ad
+    let policy = Policy::default();
+    let session = Session::try_from(policy).expect("failed to craft policy");
 
     let start = session.start(chain).expect("failed to start session");
-    let mut ls = LaunchStart {
-        policy: vec![],
-        cert: vec![],
-        session: vec![],
-    };
+    let start_packet = Message::LaunchStart(start);
+    
+    let mut cbor_start_packet = Vec::new();
+    into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
-    ciborium::ser::into_writer(&start.policy, &mut ls.policy).expect("failed to serialize policy");
-    start
-        .cert
-        .encode(&mut ls.cert, ())
-        .expect("start cert encode");
-    into_writer(&start.session, &mut ls.session).expect("failed to serialize session");
-
-    let start = session.start(chain).expect("failed to start session");
-    let mut ls = LaunchStart {
-        policy: vec![],
-        cert: vec![],
-        session: vec![],
-    };
-    //serde_flavor::to_writer(&mut ls.policy, &start.policy).expect("failed to serialize policy");
-    ciborium::ser::into_writer(&mut ls.policy, &start.policy).expect("failed to serialize policy");
-    start
-        .cert
-        .encode(&mut ls.cert, ())
-        .expect("start cert encode");
-    //serde_flavor::to_writer(&mut ls.session, &start.session).expect("failed to serialize session");
-    ciborium::ser::into_writer(&mut ls.session, &start.session)
-        .expect("failed to serialize session");
-
-    let start_packet = Message::LaunchStart(ls);
-    //TODO - use reqwest
-    //    serde_flavor::to_writer(&sock, &start_packet).expect("failed to serialize launch start");
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
-        //removing HTTPS for now, due to certificate issues
-        //.danger_accept_invalid_certs(true)
+    //removing HTTPS for now, due to certificate issues
+    //.danger_accept_invalid_certs(true)
         .build()
         .unwrap()
         .post(&keepmgr_url)
-        //TODO - check this is already CBORred
-        .body(start_packet)
+        .body(cbor_start_packet)
         .send()
         .expect("Problem starting keep");
-    let crespbytes = &response.bytes().unwrap();
+    let crespbytes = &cbor_response.bytes().unwrap();
     let msr: Message = from_reader(&crespbytes[..]).unwrap();
-
-    //let msr =
-    //    Message::deserialize(&mut de).expect("failed to deserialize expected measurement packet");
     assert!(matches!(msr, Message::Measurement(_)));
 
     let secret_packet = if let Message::Measurement(msr) = msr {
-        let build: ::sev::Build =
-            //serde_flavor::from_slice(&msr.build).expect("failed to deserialize build");
-            from_slice(&msr.build).expect("failed to deserialize build");
+        let build: Build = msr.build;
 
-        let measurement: ::sev::launch::Measurement =
-            //serde_flavor::from_slice(&msr.measurement).expect("failed to deserialize measurement");
-            from_slice(&msr.measurement).expect("failed to deserialize measurement");
+        let measurement: sev::launch::Measurement = msr.measurement;
 
         let session = session
             .verify(&DIGEST, build, measurement)
@@ -500,9 +452,7 @@ Hello World!!Hello World!\
 
         let ct_vec = CLEARTEXT.as_bytes().to_vec();
         let mut ct_enc = Vec::new();
-        //serde_flavor::ser::to_writer(&mut ct_enc, &serde_cbor::value::Value::Bytes(ct_vec))
-        ciborium::ser::into_writer(&mut ct_enc, &serde_cbor::value::Value::Bytes(ct_vec))
-            .expect("failed to encode secret");
+        into_writer(&mut ct_enc, ct_vec);
 
         let secret = session
             .secret(::sev::launch::HeaderFlags::default(), &ct_enc)
@@ -511,55 +461,35 @@ Hello World!!Hello World!\
         println!("Sent secret: {:?}", CLEARTEXT);
         println!("Sent secret len: {}", ct_enc.len());
 
-        //let s_enc = serde_flavor::to_vec(&secret).expect("failed to serialize secret to vector");
-        let s_enc = to_vec(&secret).expect("failed to serialize secret to vector");
-
-        Message::Secret(s_enc)
+        //let mut s_enc = Vec::new();
+        //into_writer(&secret, &mut s_enc).unwrap();
+        //Message::Secret(s_enc)
+        Message::Secret(Some(secret))
     } else {
-        Message::Secret(vec![])
+        //Message::Secret(vec![])
+        Message::Secret(None)
     };
 
+
+//serde_flavor::to_writer(&sock, &secret_packet).expect("failed to serialize secret packet");
+    let mut cbor_secret_msg = Vec::new();
+    into_writer(&secret_packet, &mut cbor_secret_msg).unwrap();
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
-        //removing HTTPS for now, due to certificate issues
-        //.danger_accept_invalid_certs(true)
+    //removing HTTPS for now, due to certificate issues
+    //.danger_accept_invalid_certs(true)
         .build()
         .unwrap()
         .post(&keepmgr_url)
-        //TODO - check this is already CBORred
-        .body(secret_packet)
+        .body(cbor_secret_msg)
         .send()
-        .expect("Problem starting keep");
-    let crespbytes = &response.bytes().unwrap();
+    .expect("Problem starting keep");
+
+    //let fin = Message::deserialize(&mut de).expect("failed to deserialize expected finish packet");
+    let crespbytes = &cbor_response.bytes().unwrap();
     let fin: Message = from_reader(&crespbytes[..]).unwrap();
 
-    //serde_flavor::to_writer(&sock, &secret_packet).expect("failed to serialize secret packet");
-    //let fin = Message::deserialize(&mut de).expect("failed to deserialize expected finish packet");
     assert!(matches!(fin, Message::Finish(_)));
-    //FIXME
-    Err(format!("Failure"))
-
-    /*
-    //OLD - from connor
-    let start_packet = Message::LaunchStart(ls);
-    //TODO - send this using reqwest body
-    into_writer(&start_packet, &sock).expect("failed to serialize launch start");
-
-    //FIXME - we _do_ care!
-    // Discard the measurement, the synthetic client doesn't care
-    // for an unattested launch.
-    //TODO - get a response back
-    let msr = from_reader(&sock).expect("failed to deserialize expected measurement packet");
-    assert!(matches!(msr, Message::Measurement(_)));
-
-    let secret_packet = Message::Secret(vec![]);
-    //TODO - send this using reqwest body
-    into_writer(&secret_packet, &sock).expect("failed to serialize secret packet");
-
-    //TODO - get a response back
-    let fin = from_reader(&sock).expect("failed to deserialize expected finish packet");
-    assert!(matches!(fin, Message::Finish(_)));
-
-    //FIXME
-    Err(format!("Failure"))
-    */
+    //********************* */
+    //FIXME - actually needs testing
+    Ok(CommsComplete::Success)
 }
