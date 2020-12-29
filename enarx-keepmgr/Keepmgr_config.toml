@@ -1,3 +1,3 @@
 keepmgr_address = "raption"
 keepmgr_port = 3030
-keepldr_path = "/tpm/enarx-keep-"
+keepldr_path_root = "/tmp/enarx-keep-"

@@ -66,10 +66,12 @@ async fn main() {
         port: my_port,
     };
 
+    let keepldr_path_root = settings.get("keepldr_path_root").unwrap();
+
     //find available backends for this host (currently only local - may extend?)
     let available_backends = models::populate_available_backends().await;
     //populate contract list
-    let contractlist = models::populate_contracts(&available_backends, &my_info).await;
+    let contractlist = models::populate_contracts(&available_backends, &my_info, &keepldr_path_root).await;
     //Provide mechanism to find existing Keeps
     let keeplist = models::find_existing_keep_loaders().await;
 
@@ -95,16 +97,32 @@ async fn main() {
         .and_then(filters::new_keep_parse);
 
     //manage communications from clients to keeps, by uuid
-    //FIXME - not working properly at the moment
+    //FIXME - not working properly at the moment - remove?
     let keep_comms_by_uuid = warp::post()
         .and(warp::path("keep"))
         .and(warp::path::param())
         .map(|uuid: Uuid| uuid)
         .and_then(filters::keep_by_uuid);
 
+    //FIXME - not working properly at the moment
+    let keep_comms_by_path = warp::post()
+        .and(warp::path("keep"))
+        .and(warp::path::param())
+        //.map(|path_root: String| keepldr_path_root)
+        .map(|uuid: Uuid| uuid)
+        //.and(filters::with_keepldr_path(keepldr_path_root, uuid))
+        .and(filters::with_keepldr_path_root(keepldr_path_root))
+        //.map(|path_root: String, uuid: Uuid| {(keepldr_path_root, uuid)})
+        .map(|uuid, keepldr_path_root| {
+            format!("{}{}",keepldr_path_root, uuid)
+        })
+        .and_then(filters::keep_by_path);
+
+
     let routes = list_contracts
         .or(new_keep_post)
-        .or(keep_comms_by_uuid)
+        //.or(keep_comms_by_uuid)
+        .or(keep_comms_by_path)
         .or(declare);
     println!(
         "Starting server on {}, {} v{}",
@@ -123,6 +141,7 @@ mod models {
     use glob::glob;
     use koine::*;
     use std::sync::Arc;
+    use std::path::PathBuf;
     use tokio::sync::Mutex;
     use koine::threading::lists::*;
     use uuid::Uuid;
@@ -175,6 +194,7 @@ mod models {
         //        available_backends: &Vec<Backend>,
         available_backends: &[Backend],
         keepmgr: &KeepMgr,
+        keepldr_path_root: &String,
     ) -> ContractList {
         let available_contracts = new_empty_contractlist();
         let mut cl = available_contracts.lock().await;
@@ -182,10 +202,13 @@ mod models {
         //Simple implementation: create a separate contract per available backend
         // - more complex ones are possible (and likely)
         for be in available_backends.iter() {
+            let uuid = Uuid::new_v4();
+            let pathbuf = format!("{}{}", keepldr_path_root, uuid);
             let new_keepcontract = KeepContract {
                 backend: be.clone(),
                 keepmgr: keepmgr.clone(),
-                uuid: Uuid::new_v4(),
+                uuid: uuid,
+                socket_path: PathBuf::from(pathbuf),
             };
             println!("Populating contract list with backend {}", be.as_str());
             cl.push(new_keepcontract.clone());
@@ -224,9 +247,9 @@ mod filters {
         // then repopulate
         println!("About to spawn new keep-loader");
         let service_cmd = format!(
-            "enarx-keep-{}@{}.service",
+            "enarx-keep-{}@{:?}.service",
             contract.backend.as_str(),
-            contract.uuid
+            contract.socket_path,
         );
         println!("service_cmd = {}", service_cmd);
         let _child = Command::new("systemctl")
@@ -246,6 +269,7 @@ mod filters {
         Keep {
             backend: contract.backend,
             kuuid: contract.uuid,
+            socket_path: contract.socket_path,
             state: LoaderState::Ready,
             wasmldr: None,
             human_readable_info: None,
@@ -317,9 +341,20 @@ mod filters {
         warp::any().map(move || contractlist.clone())
     }
 
+    pub fn with_keepldr_path_root(
+        path_root: String,
+    ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || path_root.clone())
+    }
+
+    pub fn with_keepldr_path(
+        path_root: String, uuid: Uuid,
+    ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || format!("{},{}", path_root.clone(), uuid))
+    }
+
     pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
-        //TODO - implement
-        //
+    //pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> { 
         //this function will set up a Unix domain connection to the Keep, and then
         // proxy communications between the client and the Keep.  For now, we return
         // a successful "comms_complete" message to the client
@@ -330,6 +365,28 @@ mod filters {
         );
         let comms_complete = CommsComplete::Success;
 
+        //let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
+        let mut cbor_reply_body = Vec::new();
+        into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
+        //let cbor_reply: CborReply = CborReply {
+        //    msg: cbor_reply_body,
+        //};
+        //        Ok(cbor_reply)
+        Ok(cbor_reply_body)
+    }
+
+    pub async fn keep_by_path(path_string: String) -> Result<impl warp::Reply, warp::Rejection> {
+        //pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> { 
+            //this function will set up a Unix domain connection to the Keep, and then
+            // proxy communications between the client and the Keep.  For now, we return
+            // a successful "comms_complete" message to the client
+            //
+        println!(
+            "Received communications request for comms with Keep, path to socket = {}",
+            path_string
+        );
+        let comms_complete = CommsComplete::Success;
+    
         //let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
         let mut cbor_reply_body = Vec::new();
         into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
