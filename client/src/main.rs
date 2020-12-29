@@ -284,12 +284,19 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
         "http://{}:{}/keep/{}",
         keepmgr.address, keepmgr.port, keep.kuuid
     );
+
+    let dummy_msg = String::from("Test message");
+    let mut cbor_msg = Vec::new();
+    into_writer(&dummy_msg, &mut cbor_msg).unwrap();
+
+
     println!("About to connect on {}", keep_mgr_url);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         .build()
         .unwrap()
         .post(&keep_mgr_url)
+        .body(cbor_msg)
         .send()
         .expect("Problem connecting to keep");
 
