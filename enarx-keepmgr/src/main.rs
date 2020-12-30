@@ -225,10 +225,8 @@ mod filters {
     use std::error::Error;
     use std::fmt;
     use std::process::Command;
-    use uuid::Uuid;
     use warp::Filter;
     use koine::threading::lists::*;
-    use std::convert::TryFrom;
     use std::os::unix::net::UnixStream;
     use std::io::prelude::*;
 
@@ -337,13 +335,7 @@ mod filters {
     ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || path_root.clone())
     }
-/*
-    pub fn with_keepldr_path(
-        path_root: String, uuid: Uuid,
-    ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
-        warp::any().map(move || format!("{},{}", path_root.clone(), uuid))
-    }
-*/
+
 /*
     pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
     //pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> { 
@@ -388,24 +380,25 @@ mod filters {
             path_string
         );
 
-        let mut stream_result = UnixStream::connect(path_string);
-        match stream_result {
-            Ok(mut stream) => {
+        let keepldr_stream_result = UnixStream::connect(path_string);
+        match keepldr_stream_result {
+            Ok(mut keepldr_stream) => {
                 //NOTE - UNTESTED!!!
-                stream.write(msg_bytes).expect("Unable to write to stream");
+                //data should already be CBOR encoded, so send on to keepldr
+                keepldr_stream.write(msg_bytes).expect("Unable to write to stream");
                 //TODO - what's an appropriate buffer size?
-
                 let mut response_buf = [0; 4096];
-                let count = stream.read(&mut response_buf).unwrap();
+                let count = keepldr_stream.read(&mut response_buf).unwrap();
                 
                 if count > 0 {
-                    //our reply should already be in CBOR format,
-                    // so sent it straight back to the caller
+                    //our reply should already be CBOR encoded,
+                    // so send it straight back to the client
                     let response = response_buf[..count].to_vec();
                     Ok(response)
                 } else {
                     //if nothing is returned, we return "CommsComplete: Success",
-                    // as we managed to connect
+                    // as we managed to connect - we can assume no comms required by
+                    // this keepldr
                     let comms_complete = CommsComplete::Success;
                     let mut cbor_reply_body = Vec::new();
                     into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
