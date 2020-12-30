@@ -387,7 +387,7 @@ mod filters {
                 //data should already be CBOR encoded, so send on to keepldr
                 keepldr_stream.write(msg_bytes).expect("Unable to write to stream");
                 //TODO - what's an appropriate buffer size?
-                let mut response_buf = [0; 4096];
+                let mut response_buf = [0; 65556];
                 let count = keepldr_stream.read(&mut response_buf).unwrap();
                 
                 if count > 0 {

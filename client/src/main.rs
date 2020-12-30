@@ -22,6 +22,7 @@ extern crate reqwest;
 //use ciborium::ser::*;
 use config::*;
 use koine::*;
+use openssl::rsa::Rsa;
 //use koine::threading::lists::*;
 use std::convert::TryFrom;
 use std::io;
@@ -31,17 +32,7 @@ use std::path::Path;
 use sev::*;
 use sev::launch::Policy;
 use sev::session::Session;
-//use enarx-keepldr::sev::certs::{ca, sev};
-//use enarx-keepldr::sev::launch::Policy;
-//use enarx-keepldr::sev::session::Session;
-//use sev::*;
-//use sev::certs::{ca, sev};
-//use sev::launch::Policy;
-//use sev::session::Session;
 use koine::attestation::sev::*;
-//use ::sev::certs::{ca, sev};
-//use ::sev::launch::Policy;
-//use ::sev::session::Session;
 
 use ciborium::{de::from_reader, ser::into_writer};
 //use codicon::{Decoder, Encoder};
@@ -397,18 +388,22 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
 
 
 pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete, String> {
-    //FIXME!!!!! (entire function)
     const DIGEST: [u8; 32] = [
         171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178,
         74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,
     ];
+    //TODO - parameterise key_length?
+    let key_length = 2048;
+    let key = Rsa::generate(key_length).unwrap();
+
 
     //TODO - make this a private key
+    /*
     const CLEARTEXT: &'static str = "\
 Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!\
 Hello World!!Hello World!\
 ";
-
+*/
     let response = reqwest::blocking::Client::builder()
         .build()
         .unwrap()
@@ -457,7 +452,8 @@ Hello World!!Hello World!\
             .verify(&DIGEST, build, measurement)
             .expect("verify failed");
 
-        let ct_vec = CLEARTEXT.as_bytes().to_vec();
+        //let ct_vec = CLEARTEXT.as_bytes().to_vec();
+        let ct_vec = key.private_key_to_pem().unwrap();
         let mut ct_enc = Vec::new();
         into_writer(&mut ct_enc, ct_vec);
 
@@ -465,7 +461,7 @@ Hello World!!Hello World!\
             .secret(::sev::launch::HeaderFlags::default(), &ct_enc)
             .expect("gen_secret failed");
 
-        println!("Sent secret: {:?}", CLEARTEXT);
+        //println!("Sent secret: {:?}", CLEARTEXT);
         println!("Sent secret len: {}", ct_enc.len());
 
         //let mut s_enc = Vec::new();
