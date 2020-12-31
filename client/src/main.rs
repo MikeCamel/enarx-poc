@@ -125,7 +125,8 @@ fn main() {
             let comms_complete: CommsComplete;
             if keep_result.backend == Backend::Sev {
                 //pre-attestation required
-                comms_complete = attest_keep(&keepmgr, &keep_result).unwrap();
+                let digest: [u8; 32] = settings.get("sev-digest").unwrap();
+                comms_complete = attest_keep(&keepmgr, &keep_result, digest).unwrap();
             } else {
                 //TEST: connect to specific keep
                 comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
@@ -258,13 +259,13 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     Ok(keep)
 }
 
-pub fn attest_keep(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsComplete, String> {
+pub fn attest_keep(keepmgr: &KeepMgr, keep: &Keep, digest: [u8; 32]) -> Result<CommsComplete, String> {
     if keep.backend == Backend::Sev {
         let keep_mgr_url = format!(
             "http://{}:{}/keep/{}",
             keepmgr.address, keepmgr.port, keep.kuuid
         );
-        sev_pre_attest(keep_mgr_url, keep)
+        sev_pre_attest(keep_mgr_url, keep, digest)
     } else {
         Err(format!("Unimplemented for {}", keep.backend.as_str()))
     }
@@ -387,27 +388,16 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
 }
 
 
-pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep) -> Result<CommsComplete, String> {
-    const DIGEST: [u8; 32] = [
-        171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178,
-        74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,
-    ];
+pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep, digest: [u8; 32]) -> Result<CommsComplete, String> {
     //TODO - parameterise key_length?
     let key_length = 2048;
     let key = Rsa::generate(key_length).unwrap();
 
-
-    //TODO - make this a private key
-    /*
-    const CLEARTEXT: &'static str = "\
-Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!Hello World!!\
-Hello World!!Hello World!\
-";
-*/
+    let keep_comms_url = format!("{}/keep/{}", keepmgr_url, keep.kuuid);
     let response = reqwest::blocking::Client::builder()
         .build()
         .unwrap()
-        .post(&keepmgr_url)
+        .post(&keep_comms_url)
         .send()
     .   expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
@@ -449,13 +439,14 @@ Hello World!!Hello World!\
         let measurement: sev::launch::Measurement = msr.measurement;
 
         let session = session
-            .verify(&DIGEST, build, measurement)
+            //.verify(&DIGEST, build, measurement)
+            .verify(&digest, build, measurement)
             .expect("verify failed");
 
         //let ct_vec = CLEARTEXT.as_bytes().to_vec();
         let ct_vec = key.private_key_to_pem().unwrap();
         let mut ct_enc = Vec::new();
-        into_writer(&mut ct_enc, ct_vec);
+        into_writer(&mut ct_enc, ct_vec).expect("Issues with encoding secret packet");
 
         let secret = session
             .secret(::sev::launch::HeaderFlags::default(), &ct_enc)

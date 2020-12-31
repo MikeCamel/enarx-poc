@@ -8,3 +8,5 @@ nil = true
 kvm = false
 sev = false
 sgx = false
+#TODO - this needs to be versioned
+sev-digest = [171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178, 74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,]
