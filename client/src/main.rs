@@ -28,11 +28,12 @@ use std::convert::TryFrom;
 use std::io;
 //use std::os::unix::net::UnixStream;
 use std::path::Path;
+use sys_info::*;
 
-use sev::*;
+use koine::attestation::sev::*;
 use sev::launch::Policy;
 use sev::session::Session;
-use koine::attestation::sev::*;
+use sev::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
 //use codicon::{Decoder, Encoder};
@@ -71,6 +72,9 @@ fn main() {
         "Keep manager on '{}:{}' (as specified in Client_config.toml).",
         keepmgr.address, keepmgr.port
     );
+
+    let myhostname = hostname().unwrap();
+    println!("We are running on host '{}'", myhostname);
 
     println!();
     println!("First we will contact the Keep manager and list available contracts");
@@ -259,7 +263,11 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     Ok(keep)
 }
 
-pub fn attest_keep(keepmgr: &KeepMgr, keep: &Keep, digest: [u8; 32]) -> Result<CommsComplete, String> {
+pub fn attest_keep(
+    keepmgr: &KeepMgr,
+    keep: &Keep,
+    digest: [u8; 32],
+) -> Result<CommsComplete, String> {
     if keep.backend == Backend::Sev {
         let keep_mgr_url = format!(
             "http://{}:{}/keep/{}",
@@ -280,7 +288,6 @@ pub fn test_keep_connection(keepmgr: &KeepMgr, keep: &Keep) -> Result<CommsCompl
     let dummy_msg = String::from("Test message");
     let mut cbor_msg = Vec::new();
     into_writer(&dummy_msg, &mut cbor_msg).unwrap();
-
 
     println!("About to connect on {}", keep_mgr_url);
 
@@ -387,8 +394,11 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     Ok(true)
 }
 
-
-pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep, digest: [u8; 32]) -> Result<CommsComplete, String> {
+pub fn sev_pre_attest(
+    keepmgr_url: String,
+    keep: &Keep,
+    digest: [u8; 32],
+) -> Result<CommsComplete, String> {
     //TODO - parameterise key_length?
     let key_length = 2048;
     let key = Rsa::generate(key_length).unwrap();
@@ -399,9 +409,9 @@ pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep, digest: [u8; 32]) -> Res
         .unwrap()
         .post(&keep_comms_url)
         .send()
-    .   expect("Problem connecting to keep");
+        .expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
-    
+
     //TODO - identify which type of chain?
     //TODO - error handling
     let chain_res: Message = from_reader(&crespbytes[..]).unwrap();
@@ -416,13 +426,13 @@ pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep, digest: [u8; 32]) -> Res
 
     let start = session.start(chain).expect("failed to start session");
     let start_packet = Message::LaunchStart(start);
-    
+
     let mut cbor_start_packet = Vec::new();
     into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
-    //removing HTTPS for now, due to certificate issues
-    //.danger_accept_invalid_certs(true)
+        //removing HTTPS for now, due to certificate issues
+        //.danger_accept_invalid_certs(true)
         .build()
         .unwrap()
         .post(&keepmgr_url)
@@ -464,19 +474,18 @@ pub fn sev_pre_attest(keepmgr_url: String, keep: &Keep, digest: [u8; 32]) -> Res
         Message::Secret(None)
     };
 
-
-//serde_flavor::to_writer(&sock, &secret_packet).expect("failed to serialize secret packet");
+    //serde_flavor::to_writer(&sock, &secret_packet).expect("failed to serialize secret packet");
     let mut cbor_secret_msg = Vec::new();
     into_writer(&secret_packet, &mut cbor_secret_msg).unwrap();
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
-    //removing HTTPS for now, due to certificate issues
-    //.danger_accept_invalid_certs(true)
+        //removing HTTPS for now, due to certificate issues
+        //.danger_accept_invalid_certs(true)
         .build()
         .unwrap()
         .post(&keepmgr_url)
         .body(cbor_secret_msg)
         .send()
-    .expect("Problem starting keep");
+        .expect("Problem starting keep");
 
     //let fin = Message::deserialize(&mut de).expect("failed to deserialize expected finish packet");
     let crespbytes = &cbor_response.bytes().unwrap();
