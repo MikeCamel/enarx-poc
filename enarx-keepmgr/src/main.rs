@@ -230,15 +230,20 @@ mod filters {
     use std::os::unix::net::UnixStream;
     use std::io::prelude::*;
 
+    pub fn systemd_escape(unescaped: String) -> String {
+        let mut escaped = str::replace(&unescaped, "-", "\\x2d");
+        escaped = str::replace(&escaped, "/", "-");
+        escaped
+    }
 
     pub fn new_keep(contract: KeepContract) -> Keep {
         //TODO - consume uuid from contract (this should be passed instead of Backend),
         // then repopulate
         println!("About to spawn new keep-loader");
         let service_cmd = format!(
-            "enarx-keep-{}@{:?}.service",
+            "enarx-keep-{}@{}.service",
             contract.backend.as_str(),
-            contract.socket_path,
+            systemd_escape(contract.socket_path.clone().into_os_string().into_string().unwrap()),
         );
         println!("service_cmd = {}", service_cmd);
         let _child = Command::new("systemctl")

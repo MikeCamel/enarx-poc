@@ -1,3 +1,5 @@
-keepmgr_address = "raption"
+keepmgr_address = "rome.sev.lab.enarx.dev"
 keepmgr_port = 3030
 keepldr_path_root = "/tmp/enarx-keep-"
+#systemd-escape'd version of keepldr_path_root
+#keepldr_path_root = "-tmp-enarx\\x2dkeepldr\\x2d"

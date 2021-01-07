@@ -1,12 +1,16 @@
-keepmgr_address = "raption"
+keepmgr_address = "rome.sev.lab.enarx.dev"
 keepmgr_port = 3030
-wasmldr_address = "raption"
+wasmldr_address = "rome.sev.lab.enarx.dev"
 wasmldr_port = 3040
 workload_path = "external/return_1.wasm"
 workload_dir = "external"
-nil = true
-kvm = false
+nil = false
+kvm = true
 sev = false
 sgx = false
 #TODO - this needs to be versioned
-sev-digest = [171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178, 74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,]
+#NOTE - get this from the running enarx-keepldr thus: 
+#     - `ENARX_BACKEND=sev cargo run report /home/mikecamel/programming/enarx-project/enarx-wasmldr/target
+#        /x86_64-unknown-linux-musl/debug/enarx-wasmldr`
+sev-digest = [255, 45, 255, 47, 20, 167, 5, 163, 35, 198, 110, 108, 155, 2, 213, 19, 77, 27, 92, 244, 79, 196, 241, 227, 173, 46, 188, 216, 20, 226, 93, 28]
+#sev-digest = [171, 137, 63, 183, 79, 113, 206, 32, 82, 187, 235, 156, 158, 168, 181, 49, 243, 102, 178, 74, 22, 242, 132, 204, 168, 84, 98, 63, 151, 249, 142, 229,]
