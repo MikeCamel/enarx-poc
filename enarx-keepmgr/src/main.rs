@@ -24,7 +24,6 @@ use warp::Filter;
 
 #[tokio::main]
 async fn main() {
-    
     let mut settings = config::Config::default();
     settings
         .merge(File::with_name("Keepmgr_config"))
@@ -33,7 +32,7 @@ async fn main() {
         .unwrap();
 
     let my_address: String = settings.get("keepmgr_address").unwrap();
-    let my_port: u16 = settings.get("keepmgr_port").unwrap();  
+    let my_port: u16 = settings.get("keepmgr_port").unwrap();
     println!("Address = {}, port = {}", &my_address, &my_port);
     let full_address = format!("{}:{}", my_address, my_port);
 
@@ -41,7 +40,7 @@ async fn main() {
     let mut socket = SocketAddr::from(([0, 0, 0, 0], my_port));
     //let mut addresses = full_address.to_socket_addrs().unwrap();
     //let mut addresses: SocketAddr;
-    let addresses_res = full_address.to_socket_addrs();    
+    let addresses_res = full_address.to_socket_addrs();
     match addresses_res {
         Ok(mut addresses) => {
             println!("Got {} sockaddresss", addresses.len());
@@ -53,13 +52,17 @@ async fn main() {
                     socket = sock;
                     break;
                 }
-            }        
+            }
         }
         Err(e) => {
             panic!("Unable to bind - {}", e);
         }
     }
-    assert_ne!(socket, SocketAddr::from(([0, 0, 0, 0], my_port)), "Unable to get address on which to bind");
+    assert_ne!(
+        socket,
+        SocketAddr::from(([0, 0, 0, 0], my_port)),
+        "Unable to get address on which to bind"
+    );
 
     let my_info: KeepMgr = KeepMgr {
         address: my_address,
@@ -68,12 +71,15 @@ async fn main() {
 
     let keepldr_path_root = settings.get("keepldr_path_root").unwrap();
 
-    //find available backends for this host (currently only local - may extend?)
+    //find available backends for this host (currently only local - may extend for brokers)
     let available_backends = models::populate_available_backends().await;
     //populate contract list
-    let contractlist = models::populate_contracts(&available_backends, &my_info, &keepldr_path_root).await;
+    let contractlist =
+        models::populate_contracts(&available_backends, &my_info, &keepldr_path_root).await;
     //Provide mechanism to find existing Keeps
     let keeplist = models::find_existing_keep_loaders().await;
+    //create keepldr connection list
+    let keepldrconnlist = models::new_empty_keepldrconnlist();
 
     let declare = warp::any().map(|| {
         format!(
@@ -94,18 +100,30 @@ async fn main() {
         .and(warp::body::aggregate())
         .and(filters::with_contractlist(contractlist.clone()))
         .and(filters::with_keeplist(keeplist.clone()))
+        .and(filters::with_keepldrconnlist(keepldrconnlist.clone()))
         .and_then(filters::new_keep_parse);
 
+    /*
     let keep_comms_by_path = warp::post()
         .and(warp::path("keep"))
         .and(warp::path::param())
         .map(|uuid: Uuid| uuid)
         .and(filters::with_keepldr_path_root(keepldr_path_root))
-        .map(|uuid, keepldr_path_root| {
-            format!("{}{}",keepldr_path_root, uuid)
-        })
-        .and(warp::body::aggregate()) 
+        .map(|uuid, keepldr_path_root| format!("{}{}", keepldr_path_root, uuid))
+        .and(warp::body::aggregate())
         .and_then(filters::keep_by_path);
+    */
+
+    let keep_comms_by_path = warp::post()
+        .and(warp::path("keep"))
+        .and(warp::path::param())
+        .map(|uuid: Uuid| uuid)
+        //.and(filters::with_keepldrconn_from_uuid(keepldrconnlist, uuid))
+        .and(filters::with_keepldrconnlist(keepldrconnlist))
+        //.and(filters::with_keepldr_path_root(keepldr_path_root))
+        //.map(|uuid, keepldr_path_root| format!("{}{}", keepldr_path_root, uuid))
+        .and(warp::body::aggregate())
+        .and_then(filters::keep_by_uuid);
 
     let routes = list_contracts
         .or(new_keep_post)
@@ -127,11 +145,11 @@ async fn main() {
 
 mod models {
     use glob::glob;
-    use koine::*;
-    use std::sync::Arc;
-    use std::path::PathBuf;
-    use tokio::sync::Mutex;
     use koine::threading::lists::*;
+    use koine::*;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
     use uuid::Uuid;
 
     pub async fn populate_available_backends() -> Vec<Backend> {
@@ -216,19 +234,24 @@ mod models {
     pub fn new_empty_contractlist() -> ContractList {
         Arc::new(Mutex::new(Vec::new()))
     }
+
+    pub fn new_empty_keepldrconnlist() -> KeepLdrConnList {
+        Arc::new(Mutex::new(Vec::new()))
+    }
 }
 
 mod filters {
     use ciborium::de::*;
     use ciborium::ser::*;
+    use koine::threading::lists::*;
     use koine::*;
     use std::error::Error;
     use std::fmt;
-    use std::process::Command;
-    use warp::Filter;
-    use koine::threading::lists::*;
-    use std::os::unix::net::UnixStream;
     use std::io::prelude::*;
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::process::Command;
+    use uuid::Uuid;
+    use warp::Filter;
 
     pub fn systemd_escape(unescaped: String) -> String {
         let mut escaped = str::replace(&unescaped, "-", "\\x2d");
@@ -243,7 +266,14 @@ mod filters {
         let service_cmd = format!(
             "enarx-keep-{}@{}.service",
             contract.backend.as_str(),
-            systemd_escape(contract.socket_path.clone().into_os_string().into_string().unwrap()),
+            systemd_escape(
+                contract
+                    .socket_path
+                    .clone()
+                    .into_os_string()
+                    .into_string()
+                    .unwrap()
+            ),
         );
         println!("service_cmd = {}", service_cmd);
         let _child = Command::new("systemctl")
@@ -288,7 +318,7 @@ mod filters {
         }
         reply_opt
     }
-    
+
     #[derive(Debug)]
     struct LocalCborErr {
         details: String,
@@ -316,17 +346,16 @@ mod filters {
 
     impl warp::reject::Reject for LocalCborErr {}
 
-    /*
-        pub fn with_available_backends(
-            available_backends: Vec<Backend>,
-        ) -> impl Filter<Extract = (Vec<Backend>,), Error = std::convert::Infallible> + Clone {
-            warp::any().map(move || available_backends.clone())
-        }
-    */
     pub fn with_keeplist(
         keeplist: KeepList,
     ) -> impl Filter<Extract = (KeepList,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || keeplist.clone())
+    }
+
+    pub fn with_keepldrconnlist(
+        keepldrconnlist: KeepLdrConnList,
+    ) -> impl Filter<Extract = (KeepLdrConnList,), Error = std::convert::Infallible> + Clone {
+        warp::any().map(move || keepldrconnlist.clone())
     }
 
     pub fn with_contractlist(
@@ -334,43 +363,40 @@ mod filters {
     ) -> impl Filter<Extract = (ContractList,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || contractlist.clone())
     }
-
+    /*
+        pub fn with_keepldrconn_from_uuid(
+            keepldrconnlist: KeepLdrConnList,
+            uuid: Uuid,
+        ) -> impl Filter<Extract = (KeepLdrConnection,), Error = std::convert::Infallible> + Clone {
+            let klconn: KeepLdrConnection;
+            for keepldrconn in keepldrconnlist.iter() {
+                if keepldrconn.kuuid == uuid {
+                    klconn = keepldrconn;
+                    break;
+                }
+                //fall-through
+                klconn = KeepLdrConnection {
+                    kuuid: Uuid::nil(),
+                    keepldrstream: None(),
+                }
+            }
+            warp::any().map(move || &klconn)
+        }
+    */
     pub fn with_keepldr_path_root(
         path_root: String,
     ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || path_root.clone())
     }
 
-/*
-    pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> {
-    //pub async fn keep_by_uuid(uuid: Uuid) -> Result<impl warp::Reply, warp::Rejection> { 
-        //this function will set up a Unix domain connection to the Keep, and then
-        // proxy communications between the client and the Keep.  For now, we return
-        // a successful "comms_complete" message to the client
-        //
-        println!(
-            "Received communications request for comms with Keep, uuid = {}",
-            uuid
-        );
-        let comms_complete = CommsComplete::Success;
-
-        //let cbor_reply_body: Vec<u8> = to_vec(&comms_complete).unwrap();
-        let mut cbor_reply_body = Vec::new();
-        into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
-        //let cbor_reply: CborReply = CborReply {
-        //    msg: cbor_reply_body,
-        //};
-        //        Ok(cbor_reply)
-        Ok(cbor_reply_body)
-    }
-*/
-    //pub async fn keep_by_path(path_string: String) -> Result<impl warp::Reply, warp::Rejection> {
-    pub async fn keep_by_path<B>(
-        path_string: String,
-        bytes: B, 
+    //FIXME - needs KeepLdrConnection usage addition
+    pub async fn keep_by_uuid<B>(
+        uuid: Uuid,
+        keepldrconnlist: KeepLdrConnList,
+        bytes: B,
     ) -> Result<impl warp::Reply, warp::Rejection>
     where
-    B: hyper::body::Buf,
+        B: hyper::body::Buf,
     {
         //this function sets up a Unix domain connection to the Keep, and then
         // proxy communications between the client and the Keep.  If no connection
@@ -379,38 +405,70 @@ mod filters {
         let msg_bytes = mbytes.as_ref();
         //let msg: String = from_reader(&msg_bytes[..]).unwrap();
         //println!("Message received was: {}", msg);
-        
+        let klcl = keepldrconnlist.lock().await;
+
         println!(
-            "Received communications request for comms with Keep, path to socket = {}",
-            path_string
+            "Received communications request for comms with Keep {}",
+            &uuid
         );
 
-        let keepldr_stream_result = UnixStream::connect(path_string);
-        match keepldr_stream_result {
-            Ok(mut keepldr_stream) => {
+        let mut klstream_result: Option<&UnixStream> = None;
+        for keepldrconn in klcl.iter() {
+            if keepldrconn.kuuid == uuid {
+                klstream_result = keepldrconn.keepldrstream.as_ref();
+                break;
+            }
+            //FALL-THROUGH
+            klstream_result = None;
+        }
+
+        match klstream_result {
+            Some(mut keepldr_stream) => {
                 //NOTE - UNTESTED!!!
-                //data should already be CBOR encoded, so send on to keepldr
-                keepldr_stream.write(msg_bytes).expect("Unable to write to stream");
-                //TODO - what's an appropriate buffer size?
+                println!("Sending {} bytes to keepldr", msg_bytes.len());
+                keepldr_stream
+                    .write(msg_bytes)
+                    .expect("Unable to write to stream");
+                //let cbor_val_res = ciborium::de::from_reader(keepldr_stream);
+                let cbor_val_res: Result<ciborium::value::Value, _> =
+                    ciborium::de::from_reader(keepldr_stream);
+                match cbor_val_res {
+                    //match ciborium::de::from_reader(keepldr_stream) {
+                    Ok(cbor_val) => {
+                        println!("Received CBOR value {:?}", cbor_val);
+                        let mut cbor_reply_body = Vec::new();
+                        into_writer(&cbor_val, &mut cbor_reply_body).unwrap();
+                        Ok(cbor_reply_body)
+                    }
+                    Err(e) => {
+                        //if nothing is returned, we return "CommsComplete: Success",
+                        // as we managed to connect - we can assume no comms required by
+                        // this keepldr
+                        println!("No or unparseable reply from keepldr, {}", e);
+                        let comms_complete = CommsComplete::Success;
+                        let mut cbor_reply_body = Vec::new();
+                        into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
+                        Ok(cbor_reply_body)
+                    }
+                }
+
+                /*
                 let mut response_buf = [0; 65556];
-                let count = keepldr_stream.read(&mut response_buf).unwrap();
-                
-                if count > 0 {
+                let mut count = keepldr_stream.read(&mut response_buf).unwrap();
+                println!("Received {} bytes from keepldr", count);
+
+                let mut response: Vec<u8> = Vec::new();
+                response.append(&mut response_buf[..count].to_vec());
+                while count > 0 {
                     //our reply should already be CBOR encoded,
                     // so send it straight back to the client
-                    let response = response_buf[..count].to_vec();
-                    Ok(response)
-                } else {
-                    //if nothing is returned, we return "CommsComplete: Success",
-                    // as we managed to connect - we can assume no comms required by
-                    // this keepldr
-                    let comms_complete = CommsComplete::Success;
-                    let mut cbor_reply_body = Vec::new();
-                    into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
-                    Ok(cbor_reply_body)
+                    println!("Received {} bytes from keepldr", count);
+                    count = keepldr_stream.read(&mut response_buf).unwrap();
+                    response.append(&mut response_buf[..count].to_vec());
                 }
-            },
-            Err(_) => {
+                */
+            }
+            None => {
                 let comms_complete = CommsComplete::Failure;
                 let mut cbor_reply_body = Vec::new();
                 into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
@@ -419,6 +477,64 @@ mod filters {
         }
     }
 
+    /*
+        //TODO - add keepldrconnection here
+        pub async fn keep_by_path<B>(
+            path_string: String,
+            bytes: B,
+        ) -> Result<impl warp::Reply, warp::Rejection>
+        where
+            B: hyper::body::Buf,
+        {
+            //this function sets up a Unix domain connection to the Keep, and then
+            // proxy communications between the client and the Keep.  If no connection
+            // can be set up, we return "CommsComplete::Failure"
+            let mbytes: &[u8] = bytes.bytes();
+            let msg_bytes = mbytes.as_ref();
+            //let msg: String = from_reader(&msg_bytes[..]).unwrap();
+            //println!("Message received was: {}", msg);
+
+            println!(
+                "Received communications request for comms with Keep, path to socket = {}",
+                path_string
+            );
+
+            let keepldr_stream_result = UnixStream::connect(path_string);
+            match keepldr_stream_result {
+                Ok(mut keepldr_stream) => {
+                    //NOTE - UNTESTED!!!
+                    //data should already be CBOR encoded, so send on to keepldr
+                    keepldr_stream
+                        .write(msg_bytes)
+                        .expect("Unable to write to stream");
+                    //TODO - what's an appropriate buffer size?
+                    let mut response_buf = [0; 65556];
+                    let count = keepldr_stream.read(&mut response_buf).unwrap();
+
+                    if count > 0 {
+                        //our reply should already be CBOR encoded,
+                        // so send it straight back to the client
+                        let response = response_buf[..count].to_vec();
+                        Ok(response)
+                    } else {
+                        //if nothing is returned, we return "CommsComplete: Success",
+                        // as we managed to connect - we can assume no comms required by
+                        // this keepldr
+                        let comms_complete = CommsComplete::Success;
+                        let mut cbor_reply_body = Vec::new();
+                        into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
+                        Ok(cbor_reply_body)
+                    }
+                }
+                Err(_) => {
+                    let comms_complete = CommsComplete::Failure;
+                    let mut cbor_reply_body = Vec::new();
+                    into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
+                    Ok(cbor_reply_body)
+                }
+            }
+        }
+    */
     pub async fn list_contracts(
         available_contracts: ContractList,
     ) -> Result<impl warp::Reply, warp::Rejection> {
@@ -446,6 +562,7 @@ mod filters {
         bytes: B,
         available_contracts: ContractList,
         keeplist: KeepList,
+        keepldrconnlist: KeepLdrConnList,
     ) -> Result<impl warp::Reply, warp::Rejection>
     where
         B: hyper::body::Buf,
@@ -475,21 +592,45 @@ mod filters {
                     keepcontract.uuid
                 );
                 let mut kll = keeplist.lock().await;
+                let mut klcl = keepldrconnlist.lock().await;
                 println!(
                     "Keeplist currently has {} entries, about to add {}",
                     kll.len(),
                     keepcontract.uuid,
                 );
                 let new_keep = new_keep(keepcontract);
+                //in the case of an sev keep, immediately bind to a Unix socket and await a connection
+
+                let keepldrconn: KeepLdrConnection;
+                if new_keep.backend == Backend::Sev {
+                    let listener = UnixListener::bind(&new_keep.socket_path).unwrap();
+                    let keepldr_stream = match listener.accept() {
+                        Ok((socket, _addr)) => socket,
+                        Err(e) => {
+                            //better error handling (with time-outs, etc.) here.
+                            panic!("Failed to get a connection - {}", e);
+                        }
+                    };
+                    keepldrconn = KeepLdrConnection {
+                        kuuid: new_keep.kuuid,
+                        keepldrstream: Some(keepldr_stream),
+                    };
+                } else {
+                    keepldrconn = KeepLdrConnection {
+                        kuuid: new_keep.kuuid,
+                        keepldrstream: None,
+                    }
+                }
+                klcl.push(keepldrconn);
+                // *** replace klcl?
                 kll.push(new_keep.clone());
                 //replace old list of available contracts with updated one
                 *kcl = ncl;
                 //available_contracts = Arc::new(Mutex::new(Vec::new())).push(ncl);
-                //TODO - repopulate (with one of the same type?)
                 //let cbor_reply_body: Vec<u8> = to_vec(&new_keep).unwrap();
                 let mut cbor_reply_body = Vec::new();
                 into_writer(&new_keep, &mut cbor_reply_body).unwrap();
-                 Ok(cbor_reply_body)
+                Ok(cbor_reply_body)
             }
             None => {
                 println!("Unsupported contract requested");
@@ -497,6 +638,5 @@ mod filters {
                 Err(warp::reject::custom(lcbore))
             }
         }
-        
     }
 }

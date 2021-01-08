@@ -5,8 +5,8 @@ wasmldr_port = 3040
 workload_path = "external/return_1.wasm"
 workload_dir = "external"
 nil = false
-kvm = true
-sev = false
+kvm = false
+sev = true
 sgx = false
 #TODO - this needs to be versioned
 #NOTE - get this from the running enarx-keepldr thus: 

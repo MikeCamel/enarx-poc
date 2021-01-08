@@ -411,6 +411,7 @@ pub fn sev_pre_attest(
         .send()
         .expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
+    println!("Received {} bytes", crespbytes.len());
 
     //TODO - identify which type of chain?
     //TODO - error handling
@@ -421,6 +422,7 @@ pub fn sev_pre_attest(
         _ => panic!("expected certificate chain"),
     };
 
+    println!("Received chain as first Message");
     let policy = Policy::default();
     let session = Session::try_from(policy).expect("failed to craft policy");
 
@@ -430,6 +432,7 @@ pub fn sev_pre_attest(
     let mut cbor_start_packet = Vec::new();
     into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
+    println!("Sending response");
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
         //.danger_accept_invalid_certs(true)
@@ -441,6 +444,8 @@ pub fn sev_pre_attest(
         .expect("Problem starting keep");
     let crespbytes = &cbor_response.bytes().unwrap();
     let msr: Message = from_reader(&crespbytes[..]).unwrap();
+    println!("Received second Message");
+
     assert!(matches!(msr, Message::Measurement(_)));
 
     let secret_packet = if let Message::Measurement(msr) = msr {
