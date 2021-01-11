@@ -327,7 +327,7 @@ pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
 
     let in_contents = match std::fs::read(in_path) {
         Ok(in_contents) => {
-            println!("Contents = of {} bytes", &in_contents.len());
+            println!("Contents of payload = {} bytes", &in_contents.len());
             in_contents
         }
         Err(_) => {
@@ -432,7 +432,7 @@ pub fn sev_pre_attest(
     let mut cbor_start_packet = Vec::new();
     into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
-    println!("Sending response");
+    println!("Sending response of {} bytes", cbor_start_packet.len());
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
         //.danger_accept_invalid_certs(true)
@@ -444,31 +444,39 @@ pub fn sev_pre_attest(
         .expect("Problem starting keep");
     let crespbytes = &cbor_response.bytes().unwrap();
     let msr: Message = from_reader(&crespbytes[..]).unwrap();
-    println!("Received second Message");
+    println!("Received second Message of {} bytes", crespbytes.len());
 
     assert!(matches!(msr, Message::Measurement(_)));
+    println!();
 
     let secret_packet = if let Message::Measurement(msr) = msr {
         let build: Build = msr.build;
 
         let measurement: sev::launch::Measurement = msr.measurement;
 
+        println!("Digest = {:?}", digest);
+        println!("Build = {:?}", build);
+        println!("Measurement = {:?}", msr);
+        println!();
+
         let session = session
             //.verify(&DIGEST, build, measurement)
             .verify(&digest, build, measurement)
             .expect("verify failed");
 
+        println!("Verify succeeded!");
         //let ct_vec = CLEARTEXT.as_bytes().to_vec();
         let ct_vec = key.private_key_to_pem().unwrap();
-        let mut ct_enc = Vec::new();
-        into_writer(&mut ct_enc, ct_vec).expect("Issues with encoding secret packet");
-
+        println!("ct_vec (private key) = {} bytes", ct_vec.len());
+        let mut cbor_ct = Vec::new();
+        into_writer(&ct_vec, &mut cbor_ct).expect("Issues with encoding secret packet");
+        println!("ct_enc (CBOR encoded key) = {:?}", cbor_ct);
         let secret = session
-            .secret(::sev::launch::HeaderFlags::default(), &ct_enc)
+            .secret(::sev::launch::HeaderFlags::default(), &cbor_ct)
             .expect("gen_secret failed");
 
         //println!("Sent secret: {:?}", CLEARTEXT);
-        println!("Sent secret len: {}", ct_enc.len());
+        println!("Sent secret len: {}", cbor_ct.len());
 
         //let mut s_enc = Vec::new();
         //into_writer(&secret, &mut s_enc).unwrap();

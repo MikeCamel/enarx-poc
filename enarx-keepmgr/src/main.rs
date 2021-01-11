@@ -408,8 +408,9 @@ mod filters {
         let klcl = keepldrconnlist.lock().await;
 
         println!(
-            "Received communications request for comms with Keep {}",
-            &uuid
+            "Received communications request for comms with Keep {} of {} bytes",
+            &uuid,
+            msg_bytes.len(),
         );
 
         let mut klstream_result: Option<&UnixStream> = None;
@@ -435,9 +436,10 @@ mod filters {
                 match cbor_val_res {
                     //match ciborium::de::from_reader(keepldr_stream) {
                     Ok(cbor_val) => {
-                        println!("Received CBOR value {:?}", cbor_val);
+                        //       println!("Received CBOR value {:?}", cbor_val);
                         let mut cbor_reply_body = Vec::new();
                         into_writer(&cbor_val, &mut cbor_reply_body).unwrap();
+                        println!("Sending {} bytes to client", cbor_reply_body.len());
                         Ok(cbor_reply_body)
                     }
                     Err(e) => {
