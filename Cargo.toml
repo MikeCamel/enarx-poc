@@ -3,5 +3,5 @@
 members = [
 	"client",
 	"enarx-keepmgr",
-	"koine",
+	"demo-tests",
 ]
