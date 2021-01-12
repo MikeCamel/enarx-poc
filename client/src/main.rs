@@ -18,16 +18,13 @@
 #![deny(clippy::all)]
 extern crate reqwest;
 
-//use ciborium::de::*;
-//use ciborium::ser::*;
 use config::*;
 use koine::*;
 use openssl::rsa::Rsa;
-//use koine::threading::lists::*;
 use std::convert::TryFrom;
 use std::io;
-//use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use structopt::StructOpt;
 use sys_info::*;
 
 use koine::attestation::sev::*;
@@ -36,8 +33,29 @@ use sev::session::Session;
 use sev::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
-//use codicon::{Decoder, Encoder};
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+
+#[derive(StructOpt)]
+pub struct Interactive {}
+
+#[derive(StructOpt)]
+pub struct Deploy {
+    payload: PathBuf,
+    keepmgr_addr: String,
+    keepmgr_port: u16,
+}
+
+#[derive(StructOpt)]
+#[structopt(version=VERSION, author=AUTHORS.split(";").nth(0).unwrap())]
+enum Options {
+    //Info(Info),
+    Deploy(Deploy),
+    Interactive(Interactive),
+}
+
+#[allow(clippy::unnecessary_wraps)]
 //currently only one Keep-Manager and one Keep supported
 fn main() {
     let mut settings = config::Config::default();
@@ -47,13 +65,92 @@ fn main() {
         .merge(config::Environment::with_prefix("client"))
         .unwrap();
 
+    match Options::from_args() {
+        Options::Deploy(e) => deploy(e, &mut settings),
+        Options::Interactive(e) => interactive(e, &mut settings),
+    }
+}
+
+pub fn deploy(deploy: Deploy, settings: &mut Config) {
+    //TODO - implement
+    let keepmgr = KeepMgr {
+        address: deploy.keepmgr_addr,
+        port: deploy.keepmgr_port,
+    };
+    settings.set("user_workload", deploy.payload.to_str());
+    let keepcontracts: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
+    if keepcontracts.is_empty() {
+        panic!("No contracts available");
+    }
+
+    let mut keep_result_vec: Vec<Keep> = Vec::new();
+    for contract in keepcontracts.iter() {
+        if settings.get(contract.backend.as_str()).unwrap() {
+            println!("Keeps of type {} are acceptable", contract.backend.as_str());
+
+            let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
+            println!(
+                "Received keep, kuuid = {:?}, backend = {}",
+                keep_result.kuuid,
+                keep_result.backend.as_str()
+            );
+            //println!();
+            println!("Connecting to the created Keep (for attestation, etc.)");
+
+            let comms_complete: CommsComplete;
+            if keep_result.backend == Backend::Sev {
+                //pre-attestation required
+                let digest: [u8; 32] = settings.get("sev-digest").unwrap();
+                comms_complete = attest_keep(&keepmgr, &keep_result, digest).unwrap();
+            } else {
+                //TEST: connect to specific keep
+                comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
+            }
+            match comms_complete {
+                CommsComplete::Success => println!("Success connecting to {}", &keep_result.kuuid),
+                CommsComplete::Failure => println!("Failure connecting to {}", &keep_result.kuuid),
+            }
+            keep_result_vec.push(keep_result);
+        }
+    }
+    for keep in keep_result_vec.iter() {
+        let mut chosen_keep = keep.clone();
+        //perform attestation
+        //steps required will depend on backend
+
+        //get certificate from keepldr
+        //TODO - if this fails, we need to panic
+
+        match get_keep_wasmldr(&chosen_keep, &settings) {
+            Ok(wl) => chosen_keep.wasmldr = Some(wl),
+            Err(e) => panic!("No wasmloader found: {}", e),
+        }
+        //STATE: keep ready for us to connect to it
+
+        //choose wasm workload
+        // TODO - check certificate
+        let workload: Workload = retrieve_workload(&settings).unwrap();
+        //connect to wasmldr via HTTPS
+
+        //send wasm workload
+        let provision_result = provision_workload(&chosen_keep, &workload);
+        match provision_result {
+            Ok(_b) => println!("Successfully sent workload!"),
+            Err(e) => println!("Had a problem with sending workload: {}", e),
+        }
+    }
+}
+
+pub fn interactive(interactive: Interactive, settings: &mut Config) {
+    //TODO - move current main() into this function
+
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let mut user_input = String::new();
     println!("\nWelcome to the Enarx client.");
 
-    if args.len() > 0 {
-        settings.set("user_workload", args[0].clone()).unwrap();
+    if args.len() > 1 {
+        settings.set("user_workload", args[1].clone()).unwrap();
         println!(
             "Received wasm workload {}\n",
             settings.get_str("user_workload").unwrap()
@@ -62,6 +159,7 @@ fn main() {
     //list available keepmgrs if applicable
     let keepmgr_addr: String = settings.get("keepmgr_address").unwrap();
     let keepmgr_port: u16 = settings.get("keepmgr_port").unwrap();
+
     let keepmgr = KeepMgr {
         //        address: keepmgr_addr.to_string(),
         address: keepmgr_addr,
@@ -144,22 +242,6 @@ fn main() {
         }
     }
 
-    /*
-    //TEST - re-check availability of contracts
-    //for a particular keepmgr, retrieve list of available contracts
-    let keepcontracts2: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
-    println!();
-    if keepcontracts2.len() == 0 {
-        println!("No contracts available");
-    }
-    for i in 0..keepcontracts2.len() {
-        println!(
-            "Contract available for a {} Keep, uuid = {:?}",
-            keepcontracts2[i].backend.as_str(),
-            keepcontracts2[i].uuid
-        );
-    }
-    */
     println!();
     println!("We will attempt to connect to the first Keep and send a wasm workload");
     println!("********************************");
@@ -183,12 +265,10 @@ fn main() {
         }
         //STATE: keep ready for us to connect to it
 
-        //disconnect from keepmgr
-
         //choose wasm workload
+        // TODO - check certificate
         let workload: Workload = retrieve_workload(&settings).unwrap();
         //connect to wasmldr via HTTPS
-        // (note validate server against certificate received above)
 
         //send wasm workload
         let provision_result = provision_workload(&chosen_keep, &workload);
@@ -196,7 +276,6 @@ fn main() {
             Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
         }
-        println!("Ready for next keep?");
     }
 }
 
@@ -224,7 +303,7 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
         .expect("Problem starting keep");
 
     let cbytes: &[u8] = &cbor_response.bytes().unwrap();
-    println!("cbytes len = {}", cbytes.len());
+    //println!("cbytes len = {}", cbytes.len());
     let crespbytes = cbytes.as_ref();
     let contractvec: Vec<KeepContract> = from_reader(&crespbytes[..]).unwrap();
 
@@ -232,7 +311,6 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
 }
 
 pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, String> {
-    //    let cbor_msg = to_vec(&keepcontract);
     let mut cbor_msg = Vec::new();
     into_writer(&keepcontract, &mut cbor_msg).unwrap();
 
@@ -240,12 +318,10 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     //removing HTTPS for now, due to certificate issues
     //let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
     println!("About to connect on {}", keep_mgr_url);
-    println!("Sending {:02x?}", &cbor_msg);
+    //println!("Sending {:02x?}", &cbor_msg);
 
-    //------------- TEST
     let contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
-    println!("bytes = {:02x?}", &contract);
-    //------------- END TEST
+    //println!("bytes = {:02x?}", &contract);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
@@ -317,13 +393,12 @@ pub fn get_keep_wasmldr(_keep: &Keep, settings: &Config) -> Result<Wasmldr, Stri
 }
 
 pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
-    //TODO - add loading of files from command-line
-    //let workload_path: String = settings.get("workload_path").unwrap();
     let workload_path: String = match settings.get_str("user_workload") {
         Ok(user_workload) => user_workload,
         Err(_) => settings.get("workload_path").unwrap(),
     };
     let in_path = Path::new(&workload_path);
+    println!("Taking workload from {}", &workload_path);
 
     let in_contents = match std::fs::read(in_path) {
         Ok(in_contents) => {
@@ -344,7 +419,6 @@ pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
 }
 
 pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, String> {
-    //    let cbor_msg = to_vec(&workload);
     let mut cbor_msg = Vec::new();
     into_writer(&workload, &mut cbor_msg).unwrap();
 
@@ -411,7 +485,7 @@ pub fn sev_pre_attest(
         .send()
         .expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
-    println!("Received {} bytes", crespbytes.len());
+    //println!("Received {} bytes", crespbytes.len());
 
     //TODO - identify which type of chain?
     //TODO - error handling
@@ -422,7 +496,7 @@ pub fn sev_pre_attest(
         _ => panic!("expected certificate chain"),
     };
 
-    println!("Received chain as first Message");
+    //println!("Received chain as first Message");
     let policy = Policy::default();
     let session = Session::try_from(policy).expect("failed to craft policy");
 
@@ -432,7 +506,7 @@ pub fn sev_pre_attest(
     let mut cbor_start_packet = Vec::new();
     into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
-    println!("Sending response of {} bytes", cbor_start_packet.len());
+    //println!("Sending response of {} bytes", cbor_start_packet.len());
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
         //.danger_accept_invalid_certs(true)
@@ -444,50 +518,46 @@ pub fn sev_pre_attest(
         .expect("Problem starting keep");
     let crespbytes = &cbor_response.bytes().unwrap();
     let msr: Message = from_reader(&crespbytes[..]).unwrap();
-    println!("Received second Message of {} bytes", crespbytes.len());
+    //println!("Received second Message of {} bytes", crespbytes.len());
 
     assert!(matches!(msr, Message::Measurement(_)));
-    println!();
+    //println!();
 
     let secret_packet = if let Message::Measurement(msr) = msr {
         let build: Build = msr.build;
 
         let measurement: sev::launch::Measurement = msr.measurement;
 
-        println!("Digest = {:?}", digest);
-        println!("Build = {:?}", build);
-        println!("Measurement = {:?}", msr);
-        println!();
+        //println!("Digest = {:?}", digest);
+        //println!("Build = {:?}", build);
+        //println!("Measurement = {:?}", msr);
+        //println!();
 
         let session = session
-            //.verify(&DIGEST, build, measurement)
             .verify(&digest, build, measurement)
             .expect("verify failed");
 
-        println!("Verify succeeded!");
-        //let ct_vec = CLEARTEXT.as_bytes().to_vec();
+        println!(
+            "Keep attestation verification succeeded for Keep {}",
+            keep.kuuid
+        );
+        //FIXME - change to der from pem
         let ct_vec = key.private_key_to_pem().unwrap();
-        println!("ct_vec (private key) = {} bytes", ct_vec.len());
+        //println!("ct_vec (private key) = {} bytes", ct_vec.len());
         let mut cbor_ct = Vec::new();
         into_writer(&ct_vec, &mut cbor_ct).expect("Issues with encoding secret packet");
-        println!("ct_enc (CBOR encoded key) = {:?}", cbor_ct);
+        //println!("ct_enc (CBOR encoded key) = {:?}", cbor_ct);
         let secret = session
             .secret(::sev::launch::HeaderFlags::default(), &cbor_ct)
             .expect("gen_secret failed");
 
-        //println!("Sent secret: {:?}", CLEARTEXT);
-        println!("Sent secret len: {}", cbor_ct.len());
+        //println!("Sent secret len: {}", cbor_ct.len());
 
-        //let mut s_enc = Vec::new();
-        //into_writer(&secret, &mut s_enc).unwrap();
-        //Message::Secret(s_enc)
         Message::Secret(Some(secret))
     } else {
-        //Message::Secret(vec![])
         Message::Secret(None)
     };
 
-    //serde_flavor::to_writer(&sock, &secret_packet).expect("failed to serialize secret packet");
     let mut cbor_secret_msg = Vec::new();
     into_writer(&secret_packet, &mut cbor_secret_msg).unwrap();
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
@@ -500,12 +570,9 @@ pub fn sev_pre_attest(
         .send()
         .expect("Problem starting keep");
 
-    //let fin = Message::deserialize(&mut de).expect("failed to deserialize expected finish packet");
     let crespbytes = &cbor_response.bytes().unwrap();
     let fin: Message = from_reader(&crespbytes[..]).unwrap();
 
     assert!(matches!(fin, Message::Finish(_)));
-    //********************* */
-    //FIXME - actually needs testing
     Ok(CommsComplete::Success)
 }
