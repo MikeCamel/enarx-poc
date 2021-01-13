@@ -228,6 +228,7 @@ mod models {
     pub async fn find_existing_keep_loaders() -> KeepList {
         println!("Looking for existing keep-loaders in /tmp");
         //TODO - implement (scheme required)
+        //TODO - also remove old sockets (tidy-up)
         new_empty_keeplist()
     }
 
@@ -252,17 +253,18 @@ mod filters {
     use std::process::Command;
     use uuid::Uuid;
     use warp::Filter;
+    use std::path::PathBuf;
+
 
     pub fn systemd_escape(unescaped: String) -> String {
+        println!("About to escape string {}", &unescaped);
         let mut escaped = str::replace(&unescaped, "-", "\\x2d");
         escaped = str::replace(&escaped, "/", "-");
         escaped
     }
 
     pub fn new_keep(contract: KeepContract) -> Keep {
-        //TODO - consume uuid from contract (this should be passed instead of Backend),
-        // then repopulate
-        println!("About to spawn new keep-loader");
+        println!("About to spawn new keep-loader for {} - socket_path = {:?}", contract.uuid, contract.socket_path);
         let service_cmd = format!(
             "enarx-keep-{}@{}.service",
             contract.backend.as_str(),
@@ -303,16 +305,39 @@ mod filters {
     pub fn consume_contract(
         contracts: Vec<KeepContract>,
         consume_contract: &KeepContract,
+        repopulate: bool,
     ) -> Option<Vec<KeepContract>> {
         let mut reply_opt = None;
         let mut cl = contracts.clone();
         println!("contract list currently has {} entries", contracts.len());
         for i in 0..cl.len() {
             if consume_contract.uuid == cl[i].uuid {
+                let new_keepcontract: Option<KeepContract>;
                 println!("Matching contract with uuid = {}", cl[i].uuid);
+                if repopulate {
+                    let socket_path_str: &str = cl[i].socket_path.to_str().unwrap();
+                    let old_uuid = format!("{}", &cl[i].uuid);
+                    let keepldr_path_root = socket_path_str.strip_suffix(&old_uuid).unwrap();
+                    println!("keepldr_path_root is {}", keepldr_path_root);
+                    let new_uuid = Uuid::new_v4();
+                    let pathbuf = format!("{}{}", keepldr_path_root, new_uuid);
+                    new_keepcontract = Some(KeepContract {
+                        backend: cl[i].backend.clone(),
+                        keepmgr: cl[i].keepmgr.clone(),
+                        uuid: new_uuid,
+                        socket_path: PathBuf::from(pathbuf),
+                    });
+                } else {
+                    new_keepcontract = None;
+                }
                 cl.remove(i);
+                match new_keepcontract {
+                    Some(kc) => cl.push(kc),
+                    None => {}
+                }
                 //                reply_opt = Some(cl.clone());
                 reply_opt = Some(cl);
+
                 break;
             }
         }
@@ -426,7 +451,7 @@ mod filters {
         match klstream_result {
             Some(mut keepldr_stream) => {
                 //NOTE - UNTESTED!!!
-                println!("Sending {} bytes to keepldr", msg_bytes.len());
+                //println!("Sending {} bytes to keepldr", msg_bytes.len());
                 keepldr_stream
                     .write(msg_bytes)
                     .expect("Unable to write to stream");
@@ -579,13 +604,13 @@ mod filters {
         println!("bytes = {:02x?}", &keepcontract);
 
         //deserialise the Vector into a KeepContract (and handle errors)
-        println!("\nnew-keep ...");
+        println!("\n\nnew-keep ...");
         //TODO - we need to get the listen address from the Keep later in the process
         //TODO - change to see whether there's a matching contract, rather than just
         // a backend - by consumption
         let mut kcl = available_contracts.lock().await;
         let new_contracts_list: Option<Vec<KeepContract>> =
-            consume_contract(kcl.clone(), &keepcontract);
+            consume_contract(kcl.clone(), &keepcontract, true);
         match new_contracts_list {
             Some(ncl) => {
                 //a returned contract list means that we were successful
@@ -602,7 +627,7 @@ mod filters {
                 );
                 let new_keep = new_keep(keepcontract);
                 //in the case of an sev keep, immediately bind to a Unix socket and await a connection
-
+                println!("About to bind to {:?}", &new_keep.socket_path);
                 let keepldrconn: KeepLdrConnection;
                 if new_keep.backend == Backend::Sev {
                     let listener = UnixListener::bind(&new_keep.socket_path).unwrap();
