@@ -299,6 +299,7 @@ mod filters {
             state: LoaderState::Ready,
             wasmldr: None,
             human_readable_info: None,
+            certificate_as_pem: None,
         }
     }
 

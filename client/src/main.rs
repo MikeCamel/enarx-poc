@@ -20,6 +20,9 @@ extern crate reqwest;
 
 use config::*;
 use koine::*;
+use openssl::asn1::Asn1Time;
+use openssl::hash::MessageDigest;
+use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
 use std::convert::TryFrom;
 use std::io;
@@ -88,20 +91,27 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         if settings.get(contract.backend.as_str()).unwrap() {
             println!("Keeps of type {} are acceptable", contract.backend.as_str());
 
-            let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
+            let mut keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
             println!(
                 "Received keep, kuuid = {:?}, backend = {}",
                 keep_result.kuuid,
                 keep_result.backend.as_str()
             );
+            match get_keep_wasmldr(&keep_result, &settings) {
+                Ok(wl) => {
+                    println!("Added wasmldr to chosen_keep");
+                    keep_result.wasmldr = Some(wl)
+                }
+                Err(e) => panic!("No wasmloader found: {}", e),
+            }
             //println!();
-            println!("Connecting to the created Keep (for attestation, etc.)");
+            println!("\nConnecting to the created Keep (for attestation, etc.)");
 
             let comms_complete: CommsComplete;
             if keep_result.backend == Backend::Sev {
                 //pre-attestation required
                 let digest: [u8; 32] = settings.get("sev-digest").unwrap();
-                comms_complete = attest_keep(&keepmgr, &keep_result, digest).unwrap();
+                comms_complete = attest_keep(&keepmgr, &mut keep_result, digest).unwrap();
             } else {
                 //TEST: connect to specific keep
                 comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
@@ -121,10 +131,6 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         //get certificate from keepldr
         //TODO - if this fails, we need to panic
 
-        match get_keep_wasmldr(&chosen_keep, &settings) {
-            Ok(wl) => chosen_keep.wasmldr = Some(wl),
-            Err(e) => panic!("No wasmloader found: {}", e),
-        }
         //STATE: keep ready for us to connect to it
 
         //choose wasm workload
@@ -210,7 +216,7 @@ pub fn interactive(interactive: Interactive, settings: &mut Config) {
         if settings.get(contract.backend.as_str()).unwrap() {
             println!("Keeps of type {} are acceptable", contract.backend.as_str());
 
-            let keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
+            let mut keep_result: Keep = new_keep(&keepmgr, &contract).unwrap();
             println!(
                 "Received keep, kuuid = {:?}, backend = {}",
                 keep_result.kuuid,
@@ -228,7 +234,7 @@ pub fn interactive(interactive: Interactive, settings: &mut Config) {
             if keep_result.backend == Backend::Sev {
                 //pre-attestation required
                 let digest: [u8; 32] = settings.get("sev-digest").unwrap();
-                comms_complete = attest_keep(&keepmgr, &keep_result, digest).unwrap();
+                comms_complete = attest_keep(&keepmgr, &mut keep_result, digest).unwrap();
             } else {
                 //TEST: connect to specific keep
                 comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
@@ -290,7 +296,7 @@ pub fn list_contracts(keepmgr: &KeepMgr) -> Result<Vec<KeepContract>, String> {
     //    "https://{}:{}/list-contracts/",
     //    keepmgr.ipaddr, keepmgr.port
     //);
-    println!("About to connect on {}", keep_mgr_url);
+    println!("\nAbout to connect on {}", keep_mgr_url);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
@@ -317,7 +323,7 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     let keep_mgr_url = format!("http://{}:{}/new_keep/", keepmgr.address, keepmgr.port);
     //removing HTTPS for now, due to certificate issues
     //let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
-    println!("About to connect on {}", keep_mgr_url);
+    println!("\nAbout to connect on {}", keep_mgr_url);
     //println!("Sending {:02x?}", &cbor_msg);
 
     let contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
@@ -341,7 +347,7 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
 
 pub fn attest_keep(
     keepmgr: &KeepMgr,
-    keep: &Keep,
+    keep: &mut Keep,
     digest: [u8; 32],
 ) -> Result<CommsComplete, String> {
     if keep.backend == Backend::Sev {
@@ -385,6 +391,7 @@ pub fn get_keep_wasmldr(_keep: &Keep, settings: &Config) -> Result<Wasmldr, Stri
     //TODO - implement with information passed via keepmgr
     let wasmldr_addr: String = settings.get("wasmldr_address").unwrap();
     let wasmldr_port: u16 = settings.get("wasmldr_port").unwrap();
+    println!("Creating wasmldr entry {}:{}", wasmldr_addr, wasmldr_port);
     let wasmldr = Wasmldr {
         wasmldr_ipaddr: wasmldr_addr,
         wasmldr_port,
@@ -452,30 +459,97 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     // we don't know what to expect as cert is dynamically generated and self-signed
     //TODO: add certs dynamically as part of protocol
 
-    println!("About to send a workload to {}", &connect_uri);
-    let _res = reqwest::blocking::Client::builder()
-        .danger_accept_invalid_certs(true)
-        //.identity(pkcs12_client_id)
-        .build()
-        .unwrap()
-        .post(&connect_uri)
-        //    .body(cbor_msg.unwrap())
-        .body(cbor_msg)
-        .send();
-    //NOTE - as the wasmldr exits once the payload has been executed, this
-    // should actually error out
-    //println!("{:#?}", res);
-    Ok(true)
+    println!("Retrieving certificate to check against wasmldr HTTPS");
+    match &keep.certificate_as_pem {
+        Some(certificate_as_pem) => {
+            //pk pem array = {}", std::str::from_utf8(&certificate_as_pem).unwrap());
+            println!(
+                "Current pem array = {}",
+                std::str::from_utf8(&certificate_as_pem).unwrap()
+            );
+            let certificate_res = reqwest::Certificate::from_pem(&certificate_as_pem);
+            match certificate_res {
+                Ok(certificate) => {
+                    println!("\nAbout to send a workload to {}", &connect_uri);
+                    let _res = reqwest::blocking::Client::builder()
+                        .https_only(true)
+                        .add_root_certificate(certificate)
+                        //.danger_accept_invalid_certs(true)
+                        //.identity(pkcs12_client_id)
+                        .build()
+                        .unwrap()
+                        .post(&connect_uri)
+                        .body(cbor_msg)
+                        .send();
+                    match _res {
+                        Ok(r) => {
+                            println!("OK result from reqwest::blocking::Client::builder");
+                            Ok(true)
+                        }
+                        Err(e) => Err(e.to_string()),
+                    }
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        }
+        None => Err(String::from(
+            "No public key available to build certificate.",
+        )),
+    }
+}
+
+fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) -> Vec<u8> {
+    /*
+    //TEST - this should cause failure!//
+    let key_length = 2048;
+    let key: Rsa<Private> = Rsa::generate(key_length).unwrap();
+
+    let pkey = PKey::from_rsa(key.clone()).unwrap();
+
+
+    //TEST//
+    */
+  
+    let mut x509_name = openssl::x509::X509NameBuilder::new().unwrap();
+    x509_name.append_entry_by_text("C", "GB").unwrap();
+    x509_name.append_entry_by_text("O", "enarx-test").unwrap();
+    x509_name.append_entry_by_text("CN", &wasmldr_addr).unwrap();
+    let x509_name = x509_name.build();
+
+    let mut x509_builder = openssl::x509::X509::builder().unwrap();
+    if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
+        panic!("Problem creating cert {}", e)
+    }
+    if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
+        panic!("Problem creating cert {}", e)
+    }
+
+    x509_builder.set_subject_name(&x509_name).unwrap();
+    x509_builder.set_pubkey(&pkey).unwrap();
+    x509_builder.sign(&pkey, MessageDigest::sha256()).unwrap();
+    let certificate = x509_builder.build();
+
+    println!(
+        "Current pem array = {}",
+        std::str::from_utf8(&certificate.to_pem().unwrap()).unwrap()
+    );
+    println!(
+        "Private key = {}",
+        std::str::from_utf8(&pkey.private_key_to_pem_pkcs8().unwrap()).unwrap()
+    );
+
+    certificate.to_pem().unwrap()
 }
 
 pub fn sev_pre_attest(
     keepmgr_url: String,
-    keep: &Keep,
+    keep: &mut Keep,
     digest: [u8; 32],
 ) -> Result<CommsComplete, String> {
     //TODO - parameterise key_length?
     let key_length = 2048;
     let key = Rsa::generate(key_length).unwrap();
+    let pkey = PKey::from_rsa(key.clone()).unwrap();
 
     let keep_comms_url = format!("{}/keep/{}", keepmgr_url, keep.kuuid);
     let response = reqwest::blocking::Client::builder()
@@ -543,16 +617,21 @@ pub fn sev_pre_attest(
         );
         //FIXME - change to der from pem
         let ct_vec = key.private_key_to_pem().unwrap();
-        //println!("ct_vec (private key) = {} bytes", ct_vec.len());
+        println!("ct_vec (private key) = {} bytes", ct_vec.len());
+        println!("ct_vec (private key) = {:?}", &ct_vec);
+
         let mut cbor_ct = Vec::new();
-        into_writer(&ct_vec, &mut cbor_ct).expect("Issues with encoding secret packet");
+        into_writer(&ciborium::value::Value::Bytes(ct_vec), &mut cbor_ct)
+            .expect("Issues with encoding secret packet");
+        //into_writer(&ciborium::value::Value::Bytes(ct_vec), &mut cbor_ct)
+        //    .expect("Issues with encoding secret packet");
+        //into_writer(&ct_vec, &mut cbor_ct).expect("Issues with encoding secret packet");
         //println!("ct_enc (CBOR encoded key) = {:?}", cbor_ct);
         let secret = session
             .secret(::sev::launch::HeaderFlags::default(), &cbor_ct)
             .expect("gen_secret failed");
 
         //println!("Sent secret len: {}", cbor_ct.len());
-
         Message::Secret(Some(secret))
     } else {
         Message::Secret(None)
@@ -574,5 +653,9 @@ pub fn sev_pre_attest(
     let fin: Message = from_reader(&crespbytes[..]).unwrap();
 
     assert!(matches!(fin, Message::Finish(_)));
+    //provide the keep with the public key
+    //TODO - this is a side-effect!  Is this acceptable?
+    let wasmldr = keep.wasmldr.as_ref().unwrap();
+    keep.certificate_as_pem = Some(generate_credentials(&wasmldr.wasmldr_ipaddr, pkey));
     Ok(CommsComplete::Success)
 }
