@@ -250,11 +250,10 @@ mod filters {
     use std::fmt;
     use std::io::prelude::*;
     use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::PathBuf;
     use std::process::Command;
     use uuid::Uuid;
     use warp::Filter;
-    use std::path::PathBuf;
-
 
     pub fn systemd_escape(unescaped: String) -> String {
         println!("About to escape string {}", &unescaped);
@@ -264,7 +263,10 @@ mod filters {
     }
 
     pub fn new_keep(contract: KeepContract) -> Keep {
-        println!("About to spawn new keep-loader for {} - socket_path = {:?}", contract.uuid, contract.socket_path);
+        println!(
+            "About to spawn new keep-loader for {} - socket_path = {:?}",
+            contract.uuid, contract.socket_path
+        );
         let service_cmd = format!(
             "enarx-keep-{}@{}.service",
             contract.backend.as_str(),
@@ -409,12 +411,13 @@ mod filters {
             warp::any().map(move || &klconn)
         }
     */
+    /*
     pub fn with_keepldr_path_root(
         path_root: String,
     ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || path_root.clone())
     }
-
+    */
     //FIXME - needs KeepLdrConnection usage addition
     pub async fn keep_by_uuid<B>(
         uuid: Uuid,

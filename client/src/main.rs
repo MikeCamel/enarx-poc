@@ -30,11 +30,11 @@ use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use sys_info::*;
 
-use std::time::*;
 use koine::attestation::sev::*;
 use sev::launch::Policy;
 use sev::session::Session;
 use sev::*;
+use std::time::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
 
@@ -125,7 +125,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         }
     }
     for keep in keep_result_vec.iter() {
-        let mut chosen_keep = keep.clone();
+        let chosen_keep = keep.clone();
         //perform attestation
         //steps required will depend on backend
 
@@ -148,7 +148,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
     }
 }
 
-pub fn interactive(interactive: Interactive, settings: &mut Config) {
+pub fn interactive(_interactive: Interactive, settings: &mut Config) {
     //TODO - move current main() into this function
 
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -327,7 +327,7 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     println!("\nAbout to connect on {}", keep_mgr_url);
     //println!("Sending {:02x?}", &cbor_msg);
 
-    let contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
+    let _contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
     //println!("bytes = {:02x?}", &contract);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
@@ -483,19 +483,19 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
                         .body(cbor_msg)
                         .send();
                     match _res {
-                        Ok(r) => {
+                        Ok(_r) => {
                             println!("OK result from reqwest::blocking::Client::builder");
                             Ok(true)
                         }
-                        Err(e) => {
+                        Err(_e) => {
                             //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
                             // like provisioning failed.  For now, we'll give an "OK" here
                             //Err(e.to_string())
                             Ok(true)
-                        },
+                        }
                     }
                 }
-                
+
                 Err(e) => Err(e.to_string()),
             }
         }
@@ -516,7 +516,7 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
 
     //TEST//
     */
-  
+
     let mut x509_name = openssl::x509::X509NameBuilder::new().unwrap();
     x509_name.append_entry_by_text("C", "GB").unwrap();
     x509_name.append_entry_by_text("O", "enarx-test").unwrap();
@@ -543,14 +543,14 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
         panic!("Problem creating cert {}", e)
     }
 
-/* 
-    if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
-        panic!("Problem creating cert {}", e)
-    }
-    if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
-        panic!("Problem creating cert {}", e)
-    }
-*/
+    /*
+        if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
+            panic!("Problem creating cert {}", e)
+        }
+        if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
+            panic!("Problem creating cert {}", e)
+        }
+    */
     x509_builder.set_subject_name(&x509_name).unwrap();
     x509_builder.set_pubkey(&pkey).unwrap();
     x509_builder.sign(&pkey, MessageDigest::sha256()).unwrap();
