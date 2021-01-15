@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use sys_info::*;
 
+use std::time::*;
 use koine::attestation::sev::*;
 use sev::launch::Policy;
 use sev::session::Session;
@@ -463,10 +464,10 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     match &keep.certificate_as_pem {
         Some(certificate_as_pem) => {
             //pk pem array = {}", std::str::from_utf8(&certificate_as_pem).unwrap());
-            println!(
-                "Current pem array = {}",
-                std::str::from_utf8(&certificate_as_pem).unwrap()
-            );
+            //println!(
+            //    "Current pem array = {}",
+            //    std::str::from_utf8(&certificate_as_pem).unwrap()
+            //);
             let certificate_res = reqwest::Certificate::from_pem(&certificate_as_pem);
             match certificate_res {
                 Ok(certificate) => {
@@ -486,9 +487,15 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
                             println!("OK result from reqwest::blocking::Client::builder");
                             Ok(true)
                         }
-                        Err(e) => Err(e.to_string()),
+                        Err(e) => {
+                            //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
+                            // like provisioning failed.  For now, we'll give an "OK" here
+                            //Err(e.to_string())
+                            Ok(true)
+                        },
                     }
                 }
+                
                 Err(e) => Err(e.to_string()),
             }
         }
@@ -517,26 +524,46 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
     let x509_name = x509_name.build();
 
     let mut x509_builder = openssl::x509::X509::builder().unwrap();
+    //from haraldh
+    x509_builder.set_issuer_name(&x509_name);
+
+    //from haraldh
+    //FIXME - this sets certificate creation to daily granularity - need to deal with
+    // occasions when we might straddle the date
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let t = t / (60 * 60 * 24) * 60 * 60 * 24;
+    let t_end = t + 60 * 60 * 24 * 7;
+    if let Err(e) = x509_builder.set_not_before(&Asn1Time::from_unix(t as _).unwrap()) {
+        panic!("Problem creating cert {}", e)
+    }
+    if let Err(e) = x509_builder.set_not_after(&Asn1Time::from_unix(t_end as _).unwrap()) {
+        panic!("Problem creating cert {}", e)
+    }
+
+/* 
     if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
         panic!("Problem creating cert {}", e)
     }
     if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
         panic!("Problem creating cert {}", e)
     }
-
+*/
     x509_builder.set_subject_name(&x509_name).unwrap();
     x509_builder.set_pubkey(&pkey).unwrap();
     x509_builder.sign(&pkey, MessageDigest::sha256()).unwrap();
     let certificate = x509_builder.build();
 
-    println!(
-        "Current pem array = {}",
-        std::str::from_utf8(&certificate.to_pem().unwrap()).unwrap()
-    );
-    println!(
-        "Private key = {}",
-        std::str::from_utf8(&pkey.private_key_to_pem_pkcs8().unwrap()).unwrap()
-    );
+    //println!(
+    //    "Current pem array = {}",
+    //    std::str::from_utf8(&certificate.to_pem().unwrap()).unwrap()
+    //);
+    //println!(
+    //    "Private key = {}",
+    //    std::str::from_utf8(&pkey.private_key_to_pem_pkcs8().unwrap()).unwrap()
+    //);
 
     certificate.to_pem().unwrap()
 }
@@ -617,8 +644,8 @@ pub fn sev_pre_attest(
         );
         //FIXME - change to der from pem
         let ct_vec = key.private_key_to_pem().unwrap();
-        println!("ct_vec (private key) = {} bytes", ct_vec.len());
-        println!("ct_vec (private key) = {:?}", &ct_vec);
+        //println!("ct_vec (private key) = {} bytes", ct_vec.len());
+        //println!("ct_vec (private key) = {:?}", &ct_vec);
 
         let mut cbor_ct = Vec::new();
         into_writer(&ciborium::value::Value::Bytes(ct_vec), &mut cbor_ct)
