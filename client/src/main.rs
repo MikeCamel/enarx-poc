@@ -10,10 +10,10 @@
 //!
 //! # Run
 //!
-//! Edit Client_config.toml
+//! Edit Client_config.toml (ensure correct measurementof SEV keep if required)
 //!     $ cargo run
 //!   OR
-//!     $ cargo run <path_to_.wasm_file>
+//!     $ cargo run <path_to_.wasm_file> <keepmg-ip-name> <keep-ip-port>
 
 #![deny(clippy::all)]
 extern crate reqwest;
@@ -76,7 +76,6 @@ fn main() {
 }
 
 pub fn deploy(deploy: Deploy, settings: &mut Config) {
-    //TODO - implement
     let keepmgr = KeepMgr {
         address: deploy.keepmgr_addr,
         port: deploy.keepmgr_port,
@@ -130,12 +129,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         //steps required will depend on backend
 
         //get certificate from keepldr
-        //TODO - if this fails, we need to panic
-
-        //STATE: keep ready for us to connect to it
-
         //choose wasm workload
-        // TODO - check certificate
         let workload: Workload = retrieve_workload(&settings).unwrap();
         //connect to wasmldr via HTTPS
 
@@ -149,8 +143,6 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
 }
 
 pub fn interactive(_interactive: Interactive, settings: &mut Config) {
-    //TODO - move current main() into this function
-
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let mut user_input = String::new();
@@ -168,7 +160,6 @@ pub fn interactive(_interactive: Interactive, settings: &mut Config) {
     let keepmgr_port: u16 = settings.get("keepmgr_port").unwrap();
 
     let keepmgr = KeepMgr {
-        //        address: keepmgr_addr.to_string(),
         address: keepmgr_addr,
         port: keepmgr_port,
     };
@@ -264,8 +255,6 @@ pub fn interactive(_interactive: Interactive, settings: &mut Config) {
 
         //get certificate from keepldr
         //get address & port
-        //TODO - if this fails, we need to panic
-
         match get_keep_wasmldr(&chosen_keep, &settings) {
             Ok(wl) => chosen_keep.wasmldr = Some(wl),
             Err(e) => panic!("No wasmloader found: {}", e),
@@ -323,13 +312,8 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
 
     let keep_mgr_url = format!("http://{}:{}/new_keep/", keepmgr.address, keepmgr.port);
     //removing HTTPS for now, due to certificate issues
-    //let keep_mgr_url = format!("https://{}:{}/new_keep/", keepmgr.ipaddr, keepmgr.port);
     println!("\nAbout to connect on {}", keep_mgr_url);
-    //println!("Sending {:02x?}", &cbor_msg);
-
     let _contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
-    //println!("bytes = {:02x?}", &contract);
-
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
         //.danger_accept_invalid_certs(true)
@@ -455,19 +439,9 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port
     );
 
-    //we accept invalid certs here because in the longer term, we will have a mechanism
-    // for finding out what the cert should be dynamically, and adding it, but currently,
-    // we don't know what to expect as cert is dynamically generated and self-signed
-    //TODO: add certs dynamically as part of protocol
-
     println!("Retrieving certificate to check against wasmldr HTTPS");
     match &keep.certificate_as_pem {
         Some(certificate_as_pem) => {
-            //pk pem array = {}", std::str::from_utf8(&certificate_as_pem).unwrap());
-            //println!(
-            //    "Current pem array = {}",
-            //    std::str::from_utf8(&certificate_as_pem).unwrap()
-            //);
             let certificate_res = reqwest::Certificate::from_pem(&certificate_as_pem);
             match certificate_res {
                 Ok(certificate) => {
@@ -506,17 +480,6 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
 }
 
 fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) -> Vec<u8> {
-    /*
-    //TEST - this should cause failure!//
-    let key_length = 2048;
-    let key: Rsa<Private> = Rsa::generate(key_length).unwrap();
-
-    let pkey = PKey::from_rsa(key.clone()).unwrap();
-
-
-    //TEST//
-    */
-
     let mut x509_name = openssl::x509::X509NameBuilder::new().unwrap();
     x509_name.append_entry_by_text("C", "GB").unwrap();
     x509_name.append_entry_by_text("O", "enarx-test").unwrap();
@@ -543,27 +506,10 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
         panic!("Problem creating cert {}", e)
     }
 
-    /*
-        if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
-            panic!("Problem creating cert {}", e)
-        }
-        if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
-            panic!("Problem creating cert {}", e)
-        }
-    */
     x509_builder.set_subject_name(&x509_name).unwrap();
     x509_builder.set_pubkey(&pkey).unwrap();
     x509_builder.sign(&pkey, MessageDigest::sha256()).unwrap();
     let certificate = x509_builder.build();
-
-    //println!(
-    //    "Current pem array = {}",
-    //    std::str::from_utf8(&certificate.to_pem().unwrap()).unwrap()
-    //);
-    //println!(
-    //    "Private key = {}",
-    //    std::str::from_utf8(&pkey.private_key_to_pem_pkcs8().unwrap()).unwrap()
-    //);
 
     certificate.to_pem().unwrap()
 }
@@ -586,7 +532,6 @@ pub fn sev_pre_attest(
         .send()
         .expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
-    //println!("Received {} bytes", crespbytes.len());
 
     //TODO - identify which type of chain?
     //TODO - error handling
@@ -596,8 +541,6 @@ pub fn sev_pre_attest(
         Message::CertificateChainRome(chain) => chain,
         _ => panic!("expected certificate chain"),
     };
-
-    //println!("Received chain as first Message");
     let policy = Policy::default();
     let session = Session::try_from(policy).expect("failed to craft policy");
 
@@ -607,7 +550,6 @@ pub fn sev_pre_attest(
     let mut cbor_start_packet = Vec::new();
     into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
-    //println!("Sending response of {} bytes", cbor_start_packet.len());
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
         //.danger_accept_invalid_certs(true)
@@ -619,7 +561,6 @@ pub fn sev_pre_attest(
         .expect("Problem starting keep");
     let crespbytes = &cbor_response.bytes().unwrap();
     let msr: Message = from_reader(&crespbytes[..]).unwrap();
-    //println!("Received second Message of {} bytes", crespbytes.len());
 
     assert!(matches!(msr, Message::Measurement(_)));
     //println!();
@@ -628,11 +569,6 @@ pub fn sev_pre_attest(
         let build: Build = msr.build;
 
         let measurement: sev::launch::Measurement = msr.measurement;
-
-        //println!("Digest = {:?}", digest);
-        //println!("Build = {:?}", build);
-        //println!("Measurement = {:?}", msr);
-        //println!();
 
         let session = session
             .verify(&digest, build, measurement)
@@ -644,21 +580,12 @@ pub fn sev_pre_attest(
         );
         //FIXME - change to der from pem
         let ct_vec = key.private_key_to_pem().unwrap();
-        //println!("ct_vec (private key) = {} bytes", ct_vec.len());
-        //println!("ct_vec (private key) = {:?}", &ct_vec);
-
         let mut cbor_ct = Vec::new();
         into_writer(&ciborium::value::Value::Bytes(ct_vec), &mut cbor_ct)
             .expect("Issues with encoding secret packet");
-        //into_writer(&ciborium::value::Value::Bytes(ct_vec), &mut cbor_ct)
-        //    .expect("Issues with encoding secret packet");
-        //into_writer(&ct_vec, &mut cbor_ct).expect("Issues with encoding secret packet");
-        //println!("ct_enc (CBOR encoded key) = {:?}", cbor_ct);
         let secret = session
             .secret(::sev::launch::HeaderFlags::default(), &cbor_ct)
             .expect("gen_secret failed");
-
-        //println!("Sent secret len: {}", cbor_ct.len());
         Message::Secret(Some(secret))
     } else {
         Message::Secret(None)
