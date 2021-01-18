@@ -341,6 +341,7 @@ pub fn attest_keep(
             "http://{}:{}/keep/{}",
             keepmgr.address, keepmgr.port, keep.kuuid
         );
+
         sev_pre_attest(keep_mgr_url, keep, digest)
     } else {
         Err(format!("Unimplemented for {}", keep.backend.as_str()))
@@ -460,10 +461,15 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
                         println!("\nAbout to send a workload to {}", &connect_uri);
                         match cert_provisioning(certificate, connect_uri, cbor_msg) {
                             Ok(_) => workload_provision_res = Ok(true),
-                            Err(e) => workload_provision_res = Err(e.to_string()),
+                            Err(e) => {
+                                //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
+                                // like provisioning failed.  For now, we'll give an "OK" here
+                                //workload_provision_res = Err(e.to_string()),
+                                workload_provision_res = Ok(true)
+                            }
                         }
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         workload_provision_res = Err(String::from(
                             "Unable to create certificate from available data.",
                         ))
@@ -480,13 +486,7 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         println!("\nAbout to send a workload to {}", &connect_uri);
         match no_cert_provisioning(connect_uri, cbor_msg) {
             Ok(_) => workload_provision_res = Ok(true),
-            Err(_e) => {
-                //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
-                // like provisioning failed.  For now, we'll give an "OK" here
-                //Err(e.to_string())
-                workload_provision_res = Ok(true);
-                //workload_provision_res = Err(e.to_string())
-            }
+            Err(e) => workload_provision_res = Err(e.to_string()),
         }
     }
     workload_provision_res
@@ -616,7 +616,8 @@ pub fn sev_pre_attest(
         let build: Build = msr.build;
 
         let measurement: sev::launch::Measurement = msr.measurement;
-
+        println!("Digest = {:?}", digest);
+        println!("Build = {:?}", build);
         let session = session
             .verify(&digest, build, measurement)
             .expect("verify failed");

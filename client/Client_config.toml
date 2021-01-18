@@ -13,4 +13,4 @@ sgx = false
 #NOTE - get this from the running enarx-keepldr thus: 
 #     - `ENARX_BACKEND=sev cargo run report /home/mikecamel/programming/enarx-project/enarx-wasmldr/target
 #        /x86_64-unknown-linux-musl/release/enarx-wasmldr` 
-sev-digest = [57, 15, 242, 34, 40, 255, 109, 130, 37, 246, 251, 233, 0, 37, 156, 180, 230, 243, 38, 95, 163, 67, 178, 8, 219, 35, 88, 134, 202, 184, 89, 238]
+sev-digest = [221, 35, 238, 3, 93, 185, 127, 99, 74, 109, 153, 25, 249, 41, 141, 250, 17, 104, 15, 125, 170, 122, 116, 141, 57, 54, 15, 101, 245, 58, 230, 72]
