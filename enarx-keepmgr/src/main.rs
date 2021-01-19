@@ -389,26 +389,7 @@ mod filters {
     ) -> impl Filter<Extract = (ContractList,), Error = std::convert::Infallible> + Clone {
         warp::any().map(move || contractlist.clone())
     }
-    /*
-        pub fn with_keepldrconn_from_uuid(
-            keepldrconnlist: KeepLdrConnList,
-            uuid: Uuid,
-        ) -> impl Filter<Extract = (KeepLdrConnection,), Error = std::convert::Infallible> + Clone {
-            let klconn: KeepLdrConnection;
-            for keepldrconn in keepldrconnlist.iter() {
-                if keepldrconn.kuuid == uuid {
-                    klconn = keepldrconn;
-                    break;
-                }
-                //fall-through
-                klconn = KeepLdrConnection {
-                    kuuid: Uuid::nil(),
-                    keepldrstream: None(),
-                }
-            }
-            warp::any().map(move || &klconn)
-        }
-    */
+
     pub fn with_keepldr_path_root(
         path_root: String,
     ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {

@@ -29,12 +29,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use sys_info::*;
+use warp::reply::Response;
 
-use std::time::*;
 use koine::attestation::sev::*;
 use sev::launch::Policy;
 use sev::session::Session;
 use sev::*;
+use std::time::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
 
@@ -112,7 +113,8 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
             if keep_result.backend == Backend::Sev {
                 //pre-attestation required
                 let digest: [u8; 32] = settings.get("sev-digest").unwrap();
-                comms_complete = attest_keep(&keepmgr, &mut keep_result, digest).unwrap();
+                comms_complete = attest_keep(&keepmgr, &mut keep_result, digest)
+                    .expect("Incomplete, missing or misformatted measurement data");
             } else {
                 //TEST: connect to specific keep
                 comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
@@ -145,6 +147,8 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
             Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
         }
+        //execute workload
+        //let run_result = run_workload(&chosen_keep);
     }
 }
 
@@ -283,6 +287,8 @@ pub fn interactive(interactive: Interactive, settings: &mut Config) {
             Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
         }
+        //execute workload
+        let run_result = run_workload(&chosen_keep);
     }
 }
 
@@ -426,6 +432,69 @@ pub fn retrieve_workload(settings: &Config) -> Result<Workload, String> {
     Ok(workload)
 }
 
+pub fn run_workload(keep: &Keep) -> Result<bool, String> {
+    let wasmldr: &Wasmldr;
+    match &keep.wasmldr {
+        None => panic!("No details available to connect to wasmldr"),
+        Some(wl) => wasmldr = wl,
+    }
+    let connect_uri = format!(
+        "https://{}:{}/run",
+        wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port
+    );
+    //TODO - add client certificate?
+    //default to requiring a matching certificate
+    let mut certificate_required = true;
+    //some backends do not provide certificates we can check
+    if keep.backend == Backend::Nil {
+        certificate_required = false;
+    }
+    if keep.backend == Backend::Kvm {
+        certificate_required = false;
+    }
+    let workload_run_res: Result<bool, String>;
+    if certificate_required {
+        println!("Attempting to retrieve certificate to check against wasmldr HTTPS");
+        match &keep.certificate_as_pem {
+            Some(certificate_as_pem) => {
+                let certificate_res = reqwest::Certificate::from_pem(&certificate_as_pem);
+                match certificate_res {
+                    Ok(certificate) => {
+                        println!("\nAbout to start a workload on {}", &connect_uri);
+                        match cert_run(certificate, connect_uri) {
+                            Ok(_) => workload_run_res = Ok(true),
+                            Err(e) => workload_run_res = Err(e.to_string()),
+                        }
+                    }
+                    Err(e) => {
+                        workload_run_res = Err(String::from(
+                            "Unable to create certificate from available data.",
+                        ))
+                    }
+                }
+            }
+            None => {
+                workload_run_res = Err(String::from(
+                    "No public key available to build certificate.",
+                ))
+            }
+        }
+    } else {
+        println!("\nAbout start a workload on {}", &connect_uri);
+        match no_cert_run(connect_uri) {
+            Ok(_) => workload_run_res = Ok(true),
+            Err(_e) => {
+                //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
+                // like provisioning failed.  For now, we'll give an "OK" here
+                //Err(e.to_string())
+                workload_run_res = Ok(true);
+                //workload_provision_res = Err(e.to_string())
+            }
+        }
+    }
+    workload_run_res
+}
+
 pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, String> {
     let mut cbor_msg = Vec::new();
     into_writer(&workload, &mut cbor_msg).unwrap();
@@ -460,49 +529,118 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     // we don't know what to expect as cert is dynamically generated and self-signed
     //TODO: add certs dynamically as part of protocol
 
-    println!("Retrieving certificate to check against wasmldr HTTPS");
-    match &keep.certificate_as_pem {
-        Some(certificate_as_pem) => {
-            //pk pem array = {}", std::str::from_utf8(&certificate_as_pem).unwrap());
-            //println!(
-            //    "Current pem array = {}",
-            //    std::str::from_utf8(&certificate_as_pem).unwrap()
-            //);
-            let certificate_res = reqwest::Certificate::from_pem(&certificate_as_pem);
-            match certificate_res {
-                Ok(certificate) => {
-                    println!("\nAbout to send a workload to {}", &connect_uri);
-                    let _res = reqwest::blocking::Client::builder()
-                        .https_only(true)
-                        .add_root_certificate(certificate)
-                        //.danger_accept_invalid_certs(true)
-                        //.identity(pkcs12_client_id)
-                        .build()
-                        .unwrap()
-                        .post(&connect_uri)
-                        .body(cbor_msg)
-                        .send();
-                    match _res {
-                        Ok(r) => {
-                            println!("OK result from reqwest::blocking::Client::builder");
-                            Ok(true)
+    //default to requiring a matching certificate
+    let mut certificate_required = true;
+    //some backends do not provide certificates we can check
+    if keep.backend == Backend::Nil {
+        certificate_required = false;
+    }
+    if keep.backend == Backend::Kvm {
+        certificate_required = false;
+    }
+    let workload_provision_res: Result<bool, String>;
+    if certificate_required {
+        println!("Attempting to retrieve certificate to check against wasmldr HTTPS");
+        match &keep.certificate_as_pem {
+            Some(certificate_as_pem) => {
+                let certificate_res = reqwest::Certificate::from_pem(&certificate_as_pem);
+                match certificate_res {
+                    Ok(certificate) => {
+                        println!("\nAbout to send a workload to {}", &connect_uri);
+                        match cert_provisioning(certificate, connect_uri, cbor_msg) {
+                            Ok(_) => workload_provision_res = Ok(true),
+                            Err(e) => workload_provision_res = Err(e.to_string()),
                         }
-                        Err(e) => {
-                            //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
-                            // like provisioning failed.  For now, we'll give an "OK" here
-                            //Err(e.to_string())
-                            Ok(true)
-                        },
+                    }
+                    Err(e) => {
+                        workload_provision_res = Err(String::from(
+                            "Unable to create certificate from available data.",
+                        ))
                     }
                 }
-                
-                Err(e) => Err(e.to_string()),
+            }
+            None => {
+                workload_provision_res = Err(String::from(
+                    "No public key available to build certificate.",
+                ))
             }
         }
-        None => Err(String::from(
-            "No public key available to build certificate.",
-        )),
+    } else {
+        println!("\nAbout to send a workload to {}", &connect_uri);
+        match no_cert_provisioning(connect_uri, cbor_msg) {
+            Ok(_) => workload_provision_res = Ok(true),
+            Err(_e) => {
+                //FIXME - Currently, wasmldr drops the connection unceremoniously, making it look
+                // like provisioning failed.  For now, we'll give an "OK" here
+                //Err(e.to_string())
+                workload_provision_res = Ok(true);
+                //workload_provision_res = Err(e.to_string())
+            }
+        }
     }
+    workload_provision_res
+}
+
+fn no_cert_run(connect_uri: String) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    println!("No cert run");
+    reqwest::blocking::Client::builder()
+        .https_only(true)
+        .danger_accept_invalid_certs(true)
+        //.identity(pkcs12_client_id)
+        .build()
+        .unwrap()
+        .post(&connect_uri)
+        .send()
+}
+
+fn cert_run(
+    certificate: reqwest::Certificate,
+    connect_uri: String,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    println!("Cert run");
+    reqwest::blocking::Client::builder()
+        .https_only(true)
+        .add_root_certificate(certificate)
+        //.danger_accept_invalid_certs(true)
+        //.identity(pkcs12_client_id)
+        .build()
+        .unwrap()
+        .post(&connect_uri)
+        .send()
+}
+
+fn no_cert_provisioning(
+    connect_uri: String,
+    cbor_msg: Vec<u8>,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    println!("No cert check");
+    reqwest::blocking::Client::builder()
+        .https_only(true)
+        .danger_accept_invalid_certs(true)
+        //.identity(pkcs12_client_id)
+        .build()
+        .unwrap()
+        .post(&connect_uri)
+        .body(cbor_msg)
+        .send()
+}
+
+fn cert_provisioning(
+    certificate: reqwest::Certificate,
+    connect_uri: String,
+    cbor_msg: Vec<u8>,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    println!("Cert check");
+    reqwest::blocking::Client::builder()
+        .https_only(true)
+        .add_root_certificate(certificate)
+        //.danger_accept_invalid_certs(true)
+        //.identity(pkcs12_client_id)
+        .build()
+        .unwrap()
+        .post(&connect_uri)
+        .body(cbor_msg)
+        .send()
 }
 
 fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) -> Vec<u8> {
@@ -516,7 +654,7 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
 
     //TEST//
     */
-  
+
     let mut x509_name = openssl::x509::X509NameBuilder::new().unwrap();
     x509_name.append_entry_by_text("C", "GB").unwrap();
     x509_name.append_entry_by_text("O", "enarx-test").unwrap();
@@ -543,14 +681,14 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
         panic!("Problem creating cert {}", e)
     }
 
-/* 
-    if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
-        panic!("Problem creating cert {}", e)
-    }
-    if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
-        panic!("Problem creating cert {}", e)
-    }
-*/
+    /*
+        if let Err(e) = x509_builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()) {
+            panic!("Problem creating cert {}", e)
+        }
+        if let Err(e) = x509_builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()) {
+            panic!("Problem creating cert {}", e)
+        }
+    */
     x509_builder.set_subject_name(&x509_name).unwrap();
     x509_builder.set_pubkey(&pkey).unwrap();
     x509_builder.sign(&pkey, MessageDigest::sha256()).unwrap();
