@@ -19,23 +19,21 @@
 extern crate reqwest;
 
 use config::*;
+use koine::attestation::sev::*;
 use koine::*;
 use openssl::asn1::Asn1Time;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use std::convert::TryFrom;
-use std::io;
-use std::path::{Path, PathBuf};
-use structopt::StructOpt;
-use sys_info::*;
-use warp::reply::Response;
-
-use koine::attestation::sev::*;
 use sev::launch::Policy;
 use sev::session::Session;
 use sev::*;
+use std::convert::TryFrom;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::time::*;
+use structopt::StructOpt;
+use sys_info::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
 
@@ -127,7 +125,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         }
     }
     for keep in keep_result_vec.iter() {
-        let mut chosen_keep = keep.clone();
+        let chosen_keep = keep.clone();
         //perform attestation
         //steps required will depend on backend
 
@@ -153,7 +151,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
 }
 
 pub fn interactive(interactive: Interactive, settings: &mut Config) {
-    //TODO - move current main() into this function
+    //FIXME - not maintained
 
     let args: Vec<String> = std::env::args().skip(1).collect();
 
@@ -288,7 +286,7 @@ pub fn interactive(interactive: Interactive, settings: &mut Config) {
             Err(e) => println!("Had a problem with sending workload: {}", e),
         }
         //execute workload
-        let run_result = run_workload(&chosen_keep);
+        let _run_result = run_workload(&chosen_keep);
     }
 }
 
@@ -466,7 +464,7 @@ pub fn run_workload(keep: &Keep) -> Result<bool, String> {
                             Err(e) => workload_run_res = Err(e.to_string()),
                         }
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         workload_run_res = Err(String::from(
                             "Unable to create certificate from available data.",
                         ))
@@ -663,7 +661,7 @@ fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) 
 
     let mut x509_builder = openssl::x509::X509::builder().unwrap();
     //from haraldh
-    x509_builder.set_issuer_name(&x509_name);
+    x509_builder.set_issuer_name(&x509_name).unwrap();
 
     //from haraldh
     //FIXME - this sets certificate creation to daily granularity - need to deal with
@@ -724,7 +722,7 @@ pub fn sev_pre_attest(
         .send()
         .expect("Problem connecting to keep");
     let crespbytes = &response.bytes().unwrap();
-    //println!("Received {} bytes", crespbytes.len());
+    println!("Received {} bytes", crespbytes.len());
 
     //TODO - identify which type of chain?
     //TODO - error handling
@@ -745,7 +743,14 @@ pub fn sev_pre_attest(
     let mut cbor_start_packet = Vec::new();
     into_writer(&start_packet, &mut cbor_start_packet).unwrap();
 
-    //println!("Sending response of {} bytes", cbor_start_packet.len());
+    /*
+    println!(
+        "Sending response of {} bytes to {}",
+        cbor_start_packet.len(),
+        &keepmgr_url
+    );
+    */
+    //println!("Bytes = {:?}", &cbor_start_packet);
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
         //removing HTTPS for now, due to certificate issues
         //.danger_accept_invalid_certs(true)

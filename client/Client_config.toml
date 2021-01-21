@@ -5,9 +5,9 @@ wasmldr_port = 3040
 workload_path = "external/return_1.wasm"
 #workload_path = "external/echo-server.wasm"
 workload_dir = "external"
-nil = true
+nil = false
 kvm = false
-sev = false
+sev = true
 sgx = false
 #TODO - this needs to be versioned
 #NOTE - get this from the running enarx-keepldr thus: 
@@ -15,4 +15,4 @@ sgx = false
 #        /x86_64-unknown-linux-musl/release/enarx-wasmldr` 
 #from working set (20210118)
 #sev-digest = [128, 61, 169, 82, 20, 221, 15, 80, 33, 216, 145, 169, 14, 164, 13, 238, 122, 237, 233, 205, 208, 79, 205, 40, 239, 165, 147, 128, 81, 68, 142, 194]
-sev-digest = [114, 62, 58, 210, 252, 77, 238, 157, 64, 82, 196, 186, 97, 141, 12, 197, 172, 10, 92, 209, 231, 57, 196, 125, 68, 81, 58, 23, 176, 219, 21, 185]
+sev-digest = [152, 155, 66, 69, 227, 156, 220, 159, 138, 117, 189, 29, 196, 194, 143, 58, 62, 217, 236, 54, 187, 112, 85, 80, 33, 224, 86, 220, 135, 158, 234, 1]

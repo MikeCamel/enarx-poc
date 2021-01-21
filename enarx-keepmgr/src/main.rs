@@ -97,37 +97,22 @@ async fn main() {
     //manage new keep requests
     let new_keep_post = warp::post()
         .and(warp::path("new_keep"))
-        .and(warp::body::aggregate())
+        .and(warp::body::bytes())
         .and(filters::with_contractlist(contractlist.clone()))
         .and(filters::with_keeplist(keeplist.clone()))
         .and(filters::with_keepldrconnlist(keepldrconnlist.clone()))
         .and_then(filters::new_keep_parse);
 
-    /*
     let keep_comms_by_path = warp::post()
         .and(warp::path("keep"))
         .and(warp::path::param())
         .map(|uuid: Uuid| uuid)
-        .and(filters::with_keepldr_path_root(keepldr_path_root))
-        .map(|uuid, keepldr_path_root| format!("{}{}", keepldr_path_root, uuid))
-        .and(warp::body::aggregate())
-        .and_then(filters::keep_by_path);
-    */
-
-    let keep_comms_by_path = warp::post()
-        .and(warp::path("keep"))
-        .and(warp::path::param())
-        .map(|uuid: Uuid| uuid)
-        //.and(filters::with_keepldrconn_from_uuid(keepldrconnlist, uuid))
         .and(filters::with_keepldrconnlist(keepldrconnlist))
-        //.and(filters::with_keepldr_path_root(keepldr_path_root))
-        //.map(|uuid, keepldr_path_root| format!("{}{}", keepldr_path_root, uuid))
-        .and(warp::body::aggregate())
+        .and(warp::body::bytes())
         .and_then(filters::keep_by_uuid);
 
     let routes = list_contracts
         .or(new_keep_post)
-        //.or(keep_comms_by_uuid)
         .or(keep_comms_by_path)
         .or(declare);
     println!(
@@ -250,11 +235,10 @@ mod filters {
     use std::fmt;
     use std::io::prelude::*;
     use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::PathBuf;
     use std::process::Command;
     use uuid::Uuid;
     use warp::Filter;
-    use std::path::PathBuf;
-
 
     pub fn systemd_escape(unescaped: String) -> String {
         println!("About to escape string {}", &unescaped);
@@ -264,7 +248,10 @@ mod filters {
     }
 
     pub fn new_keep(contract: KeepContract) -> Keep {
-        println!("About to spawn new keep-loader for {} - socket_path = {:?}", contract.uuid, contract.socket_path);
+        println!(
+            "About to spawn new keep-loader for {} - socket_path = {:?}",
+            contract.uuid, contract.socket_path
+        );
         let service_cmd = format!(
             "enarx-keep-{}@{}.service",
             contract.backend.as_str(),
@@ -419,6 +406,7 @@ mod filters {
             &uuid,
             msg_bytes.len(),
         );
+        //println!("Bytes = {:?}", &msg_bytes);
 
         let mut klstream_result: Option<&UnixStream> = None;
         for keepldrconn in klcl.iter() {
