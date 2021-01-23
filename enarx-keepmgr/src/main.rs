@@ -377,12 +377,6 @@ mod filters {
         warp::any().map(move || contractlist.clone())
     }
 
-    pub fn with_keepldr_path_root(
-        path_root: String,
-    ) -> impl Filter<Extract = (String,), Error = std::convert::Infallible> + Clone {
-        warp::any().map(move || path_root.clone())
-    }
-
     //FIXME - needs KeepLdrConnection usage addition
     pub async fn keep_by_uuid<B>(
         uuid: Uuid,
@@ -448,22 +442,6 @@ mod filters {
                         Ok(cbor_reply_body)
                     }
                 }
-
-                /*
-                let mut response_buf = [0; 65556];
-                let mut count = keepldr_stream.read(&mut response_buf).unwrap();
-                println!("Received {} bytes from keepldr", count);
-
-                let mut response: Vec<u8> = Vec::new();
-                response.append(&mut response_buf[..count].to_vec());
-                while count > 0 {
-                    //our reply should already be CBOR encoded,
-                    // so send it straight back to the client
-                    println!("Received {} bytes from keepldr", count);
-                    count = keepldr_stream.read(&mut response_buf).unwrap();
-                    response.append(&mut response_buf[..count].to_vec());
-                }
-                */
             }
             None => {
                 let comms_complete = CommsComplete::Failure;
@@ -474,64 +452,6 @@ mod filters {
         }
     }
 
-    /*
-        //TODO - add keepldrconnection here
-        pub async fn keep_by_path<B>(
-            path_string: String,
-            bytes: B,
-        ) -> Result<impl warp::Reply, warp::Rejection>
-        where
-            B: hyper::body::Buf,
-        {
-            //this function sets up a Unix domain connection to the Keep, and then
-            // proxy communications between the client and the Keep.  If no connection
-            // can be set up, we return "CommsComplete::Failure"
-            let mbytes: &[u8] = bytes.bytes();
-            let msg_bytes = mbytes.as_ref();
-            //let msg: String = from_reader(&msg_bytes[..]).unwrap();
-            //println!("Message received was: {}", msg);
-
-            println!(
-                "Received communications request for comms with Keep, path to socket = {}",
-                path_string
-            );
-
-            let keepldr_stream_result = UnixStream::connect(path_string);
-            match keepldr_stream_result {
-                Ok(mut keepldr_stream) => {
-                    //NOTE - UNTESTED!!!
-                    //data should already be CBOR encoded, so send on to keepldr
-                    keepldr_stream
-                        .write(msg_bytes)
-                        .expect("Unable to write to stream");
-                    //TODO - what's an appropriate buffer size?
-                    let mut response_buf = [0; 65556];
-                    let count = keepldr_stream.read(&mut response_buf).unwrap();
-
-                    if count > 0 {
-                        //our reply should already be CBOR encoded,
-                        // so send it straight back to the client
-                        let response = response_buf[..count].to_vec();
-                        Ok(response)
-                    } else {
-                        //if nothing is returned, we return "CommsComplete: Success",
-                        // as we managed to connect - we can assume no comms required by
-                        // this keepldr
-                        let comms_complete = CommsComplete::Success;
-                        let mut cbor_reply_body = Vec::new();
-                        into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
-                        Ok(cbor_reply_body)
-                    }
-                }
-                Err(_) => {
-                    let comms_complete = CommsComplete::Failure;
-                    let mut cbor_reply_body = Vec::new();
-                    into_writer(&comms_complete, &mut cbor_reply_body).unwrap();
-                    Ok(cbor_reply_body)
-                }
-            }
-        }
-    */
     pub async fn list_contracts(
         available_contracts: ContractList,
     ) -> Result<impl warp::Reply, warp::Rejection> {
