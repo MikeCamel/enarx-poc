@@ -80,7 +80,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         address: deploy.keepmgr_addr,
         port: deploy.keepmgr_port,
     };
-    settings.set("user_workload", deploy.payload.to_str());
+    let _try_uw = settings.set("user_workload", deploy.payload.to_str());
     let keepcontracts: Vec<KeepContract> = list_contracts(&keepmgr).unwrap();
     if keepcontracts.is_empty() {
         panic!("No contracts available");
@@ -150,7 +150,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
     }
 }
 
-pub fn interactive(interactive: Interactive, settings: &mut Config) {
+pub fn interactive(_interactive: Interactive, settings: &mut Config) {
     //FIXME - not maintained
 
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -331,7 +331,7 @@ pub fn new_keep(keepmgr: &KeepMgr, keepcontract: &KeepContract) -> Result<Keep, 
     println!("\nAbout to connect on {}", keep_mgr_url);
     //println!("Sending {:02x?}", &cbor_msg);
 
-    let contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
+    let _contract: KeepContract = from_reader(&cbor_msg[..]).unwrap();
     //println!("bytes = {:02x?}", &contract);
 
     let cbor_response: reqwest::blocking::Response = reqwest::blocking::Client::builder()
@@ -550,7 +550,7 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
                             Err(e) => workload_provision_res = Err(e.to_string()),
                         }
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         workload_provision_res = Err(String::from(
                             "Unable to create certificate from available data.",
                         ))
