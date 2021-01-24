@@ -34,7 +34,8 @@ codicon = "3.0"
 #tar = "0.4"
 sys-info = "0.7.0"
 koine = { path = "../../koine" }
-sev = { path = "../../sev", features = ["openssl"] }
+#sev = { path = "../../sev", features = ["openssl"] }
+sev = { git = "https://github.com/enarx/sev", features = ["openssl"] }
 #koine = { git = "https://github.com/MikeCamel/koine", branch="poc-dependencies" }
 openssl = { version = "0.10", features = ["vendored"] }
 uuid =  { version = "0.8", features = ["serde", "v4"] }#
