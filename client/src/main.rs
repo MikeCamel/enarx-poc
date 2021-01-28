@@ -25,6 +25,8 @@ use openssl::asn1::Asn1Time;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
+use openssl::sha;
+use openssl::ssl::*;
 use sev::launch::Policy;
 use sev::session::Session;
 use sev::*;
@@ -34,6 +36,13 @@ use std::path::{Path, PathBuf};
 use std::time::*;
 use structopt::StructOpt;
 use sys_info::*;
+//use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
+//use openssl::x509::{X509StoreContextRef, X509, X509NameRef};
+use openssl::x509::*;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::sync::{Arc, RwLock};
+use x509_parser::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
 
@@ -522,11 +531,6 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port
     );
 
-    //we accept invalid certs here because in the longer term, we will have a mechanism
-    // for finding out what the cert should be dynamically, and adding it, but currently,
-    // we don't know what to expect as cert is dynamically generated and self-signed
-    //TODO: add certs dynamically as part of protocol
-
     //default to requiring a matching certificate
     let mut certificate_required = true;
     //some backends do not provide certificates we can check
@@ -535,6 +539,42 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
     }
     if keep.backend == Backend::Kvm {
         certificate_required = false;
+    }
+    if keep.backend == Backend::Sgx {
+        //get a certificate (using get_cert_from_https)
+        let sgx_cert = get_cert_from_https(wasmldr.clone());
+        //hash the public key from the certificate
+        let pub_key = &sgx_cert.public_key().unwrap();
+        let pub_key_pem = pub_key.public_key_to_pem().unwrap();
+        let mut hasher = sha::Sha256::new();
+        hasher.update(&pub_key_pem);
+        let pub_key_hash = hasher.finish();
+
+        //get the attestation_data from the certificate
+        let mut attestation_data: Vec<u8> = Vec::new();
+        let cert_der = sgx_cert.to_der().unwrap();
+        let res = parse_x509_certificate(&cert_der);
+        let ext_name = "attestation_data";
+        match res {
+            Ok((_rem, x509)) => {
+                let issuer_name = &x509.issuer();
+                let common_name_opt = issuer_name.iter_common_name().next();
+                match common_name_opt {
+                    Some(cn) => {
+                        let att_data_base64 = common_name_opt.unwrap().as_str().unwrap();
+                        attestation_data = base64::decode(&att_data_base64).unwrap();
+                    },
+                    None => {},
+                }
+            },
+            _ => panic!("x509 parsing failed: {:?}", res),
+        }
+   
+        //TODO - implement verify call
+        //perform an attestation::verify with the attestation data, key_chain & sgx pre-measure data
+        //check that the output from the verify == the hash of the public key from the certificate
+        //if good, do a cert_provisioning with the certificate (this last is important in case
+        //the new connection is forged)
     }
     let workload_provision_res: Result<bool, String>;
     if certificate_required {
@@ -632,7 +672,6 @@ fn cert_provisioning(
     reqwest::blocking::Client::builder()
         .https_only(true)
         .add_root_certificate(certificate)
-        //.danger_accept_invalid_certs(true)
         //.identity(pkcs12_client_id)
         .build()
         .unwrap()
@@ -641,15 +680,40 @@ fn cert_provisioning(
         .send()
 }
 
+fn get_cert_from_https(wasmldr: Wasmldr) -> openssl::x509::X509 {
+    //TODO - implement
+    //connect to the wasmldr port, get the certificate with
+    //SslContextRef from the Sslstream (builder?), return
+    // https://serverfault.com/questions/661978/displaying-a-remote-ssl-certificate-details-using-cli-tools ? 
+    let mycert: Arc<RwLock<Option<X509>>> = Arc::new(RwLock::new(None));
+    let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
+
+    builder.set_verify_callback(SslVerifyMode::NONE, {
+        let mycert = mycert.clone();
+        move |_: bool, chain: &mut X509StoreContextRef| -> bool {
+            let cert = chain.current_cert().unwrap().to_owned();
+            mycert.write().unwrap().replace(cert);
+            true
+        }
+    });
+    let connection_uri = format!("{}:{}", wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port);
+    let connector = builder.build();
+    let stream = TcpStream::connect(connection_uri).unwrap();
+    let _ = connector.connect(&wasmldr.wasmldr_ipaddr, stream).unwrap();
+
+    let cert = mycert.read().unwrap().clone().unwrap();
+    cert
+    //TODO - move elsewhere
+    //println!("Got cert: {:#?}", &mycert.read().unwrap());
+
+}
+
 fn generate_credentials(wasmldr_addr: &str, pkey: openssl::pkey::PKey<Private>) -> Vec<u8> {
     /*
     //TEST - this should cause failure!//
     let key_length = 2048;
     let key: Rsa<Private> = Rsa::generate(key_length).unwrap();
-
     let pkey = PKey::from_rsa(key.clone()).unwrap();
-
-
     //TEST//
     */
 
