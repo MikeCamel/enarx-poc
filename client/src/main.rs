@@ -38,11 +38,12 @@ use structopt::StructOpt;
 use sys_info::*;
 //use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 //use openssl::x509::{X509StoreContextRef, X509, X509NameRef};
+use openssl::nid::*;
 use openssl::x509::*;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, RwLock};
-use x509_parser::*;
+//use x509_parser::*;
 
 use ciborium::{de::from_reader, ser::into_writer};
 
@@ -551,25 +552,8 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         let pub_key_hash = hasher.finish();
 
         //get the attestation_data from the certificate
-        let mut attestation_data: Vec<u8> = Vec::new();
-        let cert_der = sgx_cert.to_der().unwrap();
-        let res = parse_x509_certificate(&cert_der);
-        let ext_name = "attestation_data";
-        match res {
-            Ok((_rem, x509)) => {
-                let issuer_name = &x509.issuer();
-                let common_name_opt = issuer_name.iter_common_name().next();
-                match common_name_opt {
-                    Some(cn) => {
-                        let att_data_base64 = common_name_opt.unwrap().as_str().unwrap();
-                        attestation_data = base64::decode(&att_data_base64).unwrap();
-                    },
-                    None => {},
-                }
-            },
-            _ => panic!("x509 parsing failed: {:?}", res),
-        }
-   
+        let attestation_base64 = sgx_cert.subject_name().entries_by_nid(Nid::USERCERTIFICATE).next().unwrap().data().as_utf8().unwrap().to_string();
+        let attestation_data = base64::decode(attestation_base64).unwrap();
         //TODO - implement verify call
         //perform an attestation::verify with the attestation data, key_chain & sgx pre-measure data
         //check that the output from the verify == the hash of the public key from the certificate
