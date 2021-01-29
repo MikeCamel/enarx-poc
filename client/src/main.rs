@@ -30,6 +30,7 @@ use openssl::ssl::*;
 use sev::launch::Policy;
 use sev::session::Session;
 use sev::*;
+use sgx::*;
 use std::convert::TryFrom;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -49,10 +50,10 @@ use ciborium::{de::from_reader, ser::into_writer};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
-
+/*
 #[derive(StructOpt)]
 pub struct Interactive {}
-
+*/
 #[derive(StructOpt)]
 pub struct Deploy {
     payload: PathBuf,
@@ -65,7 +66,12 @@ pub struct Deploy {
 enum Options {
     //Info(Info),
     Deploy(Deploy),
-    Interactive(Interactive),
+    //Interactive(Interactive),
+}
+
+pub struct Sgx_Prefetch {
+    digest: Vec<u8>,
+    trusted_public_pck_chain: Vec<u8>,
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -80,7 +86,7 @@ fn main() {
 
     match Options::from_args() {
         Options::Deploy(e) => deploy(e, &mut settings),
-        Options::Interactive(e) => interactive(e, &mut settings),
+        //Options::Interactive(e) => interactive(e, &mut settings),
     }
 }
 
@@ -150,7 +156,17 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         //connect to wasmldr via HTTPS
 
         //send wasm workload
-        let provision_result = provision_workload(&chosen_keep, &workload);
+        let sgx_prefetch: Option<Sgx_Prefetch>;
+        if (chosen_keep.backend == Backend::Sgx) {
+            sgx_prefetch = Some(Sgx_Prefetch {
+                digest: settings.get("sev-digest").unwrap(),
+                trusted_public_pck_chain: settings.get("trusted_public_pck_chain").unwrap(),
+            })  
+        } else {
+            sgx_prefetch = None;
+        }
+        
+        let provision_result = provision_workload(&chosen_keep, &workload, sgx_prefetch);
         match provision_result {
             Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
@@ -159,7 +175,7 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         //let run_result = run_workload(&chosen_keep);
     }
 }
-
+/*
 pub fn interactive(_interactive: Interactive, settings: &mut Config) {
     //FIXME - not maintained
 
@@ -246,8 +262,8 @@ pub fn interactive(_interactive: Interactive, settings: &mut Config) {
             let comms_complete: CommsComplete;
             if keep_result.backend == Backend::Sev {
                 //pre-attestation required
-                let digest: [u8; 32] = settings.get("sev-digest").unwrap();
-                comms_complete = attest_keep(&keepmgr, &mut keep_result, digest).unwrap();
+                let sev_digest: [u8; 32] = settings.get("sev-digest").unwrap();
+                comms_complete = attest_keep(&keepmgr, &mut keep_result, sev_digest).unwrap();
             } else {
                 //TEST: connect to specific keep
                 comms_complete = test_keep_connection(&keepmgr, &keep_result).unwrap();
@@ -290,7 +306,12 @@ pub fn interactive(_interactive: Interactive, settings: &mut Config) {
         //connect to wasmldr via HTTPS
 
         //send wasm workload
-        let provision_result = provision_workload(&chosen_keep, &workload);
+        let mut sgx_digest: [u8];
+        if (&chosen_keep.backend == Backend::Sgx) {
+            sgx_digest = settings.get("sev-digest").unwrap();
+        }
+
+        let provision_result = provision_workload(&chosen_keep, &workload, sgx_digest);
         match provision_result {
             Ok(_b) => println!("Successfully sent workload!"),
             Err(e) => println!("Had a problem with sending workload: {}", e),
@@ -299,6 +320,7 @@ pub fn interactive(_interactive: Interactive, settings: &mut Config) {
         let _run_result = run_workload(&chosen_keep);
     }
 }
+*/
 
 pub fn list_hosts() -> Result<Vec<KeepMgr>, String> {
     Err("Unimplemented".to_string())
@@ -503,7 +525,7 @@ pub fn run_workload(keep: &Keep) -> Result<bool, String> {
     workload_run_res
 }
 
-pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, String> {
+pub fn provision_workload(keep: &Keep, workload: &Workload, sgx_prefetch: Option<Sgx_Prefetch>) -> Result<bool, String> {
     let mut cbor_msg = Vec::new();
     into_writer(&workload, &mut cbor_msg).unwrap();
 
@@ -512,21 +534,7 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         None => panic!("No details available to connect to wasmldr"),
         Some(wl) => wasmldr = wl,
     }
-    /*
-    //add client certificate presentation
-    let client_cert_path: &str = "key-material/client.p12";
-    let mut cert_buf = Vec::new();
 
-    File::open(&client_cert_path)
-        .expect("certificate opening problems")
-        .read_to_end(&mut cert_buf)
-        .expect("certificate file reading problems");
-    //DANGER, DANGER - password hard-coded
-    //DANGER, DANGER - password in clear-text
-    //FIXME, FIXME
-    let pkcs12_client_id = reqwest::Identity::from_pkcs12_der(&cert_buf, "enarx-test")
-        .expect("certificate reading problems");
-     */
     let connect_uri = format!(
         "https://{}:{}/workload",
         wasmldr.wasmldr_ipaddr, wasmldr.wasmldr_port
@@ -556,9 +564,33 @@ pub fn provision_workload(keep: &Keep, workload: &Workload) -> Result<bool, Stri
         let attestation_data = base64::decode(attestation_base64).unwrap();
         //TODO - implement verify call
         //perform an attestation::verify with the attestation data, key_chain & sgx pre-measure data
-        //check that the output from the verify == the hash of the public key from the certificate
-        //if good, do a cert_provisioning with the certificate (this last is important in case
-        //the new connection is forged)
+
+        match sgx_prefetch {
+            Some(sgx_pre) => {
+                let keychain = std::str::from_utf8(&sgx_pre.trusted_public_pck_chain).unwrap();
+                //let verify_res = sgx::attestation_types::verify::verify(&attestation_data, keychain, &sgx_pre.digest);
+                let verify_res = sgx::attestation_types::verify::verify(&pub_key_hash, keychain, &sgx_pre.digest);
+                //check that the output from the verify == the hash of the public key from the certificate
+                //if good, do a cert_provisioning with the certificate (this last is important in case
+                //the new connection is forged)
+                // TODO - pass IN pub_key_hash, check result with attestation_data?
+                match verify_res {
+                    Ok(rep_data) => {
+                        //if (rep_data == pub_key_hash) {
+                        if &rep_data == &attestation_data[..] {
+                            println!("Sgx Keep verification succeeded");
+                            certificate_required = true;
+                        } else { panic!("Sgx Keep verification failed"); }
+                    }
+                    Err(_) => {
+                        panic!("Sgx Keep verification call failed");
+                    }
+                }
+            },
+            None => {
+                panic!("Missing required information for Sgx Keep verificatione");
+            },
+        }      
     }
     let workload_provision_res: Result<bool, String>;
     if certificate_required {
