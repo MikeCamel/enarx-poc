@@ -32,16 +32,16 @@ use sev::session::Session;
 use sev::*;
 use sgx::*;
 use std::convert::TryFrom;
-use std::io;
+//use std::io;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::*;
 use structopt::StructOpt;
-use sys_info::*;
+//use sys_info::*;
 //use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 //use openssl::x509::{X509StoreContextRef, X509, X509NameRef};
 use openssl::nid::*;
 use openssl::x509::*;
-use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, RwLock};
 //use x509_parser::*;
@@ -69,9 +69,9 @@ enum Options {
     //Interactive(Interactive),
 }
 
-pub struct Sgx_Prefetch {
+pub struct SgxPrefetch {
     digest: Vec<u8>,
-    trusted_public_pck_chain: Vec<u8>,
+    trusted_public_pck_chain: String,
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -156,11 +156,13 @@ pub fn deploy(deploy: Deploy, settings: &mut Config) {
         //connect to wasmldr via HTTPS
 
         //send wasm workload
-        let sgx_prefetch: Option<Sgx_Prefetch>;
-        if (chosen_keep.backend == Backend::Sgx) {
-            sgx_prefetch = Some(Sgx_Prefetch {
-                digest: settings.get("sev-digest").unwrap(),
-                trusted_public_pck_chain: settings.get("trusted_public_pck_chain").unwrap(),
+        let sgx_prefetch: Option<SgxPrefetch>;
+        let keychain_filename: String = settings.get("sgx-keychain-file").unwrap();
+        if chosen_keep.backend == Backend::Sgx {
+            sgx_prefetch = Some(SgxPrefetch {
+                //TODO - better error handling
+                digest: settings.get("sgx-digest").unwrap(),
+                trusted_public_pck_chain: fs::read_to_string(keychain_filename).unwrap(),
             })  
         } else {
             sgx_prefetch = None;
@@ -525,7 +527,7 @@ pub fn run_workload(keep: &Keep) -> Result<bool, String> {
     workload_run_res
 }
 
-pub fn provision_workload(keep: &Keep, workload: &Workload, sgx_prefetch: Option<Sgx_Prefetch>) -> Result<bool, String> {
+pub fn provision_workload(keep: &Keep, workload: &Workload, sgx_prefetch: Option<SgxPrefetch>) -> Result<bool, String> {
     let mut cbor_msg = Vec::new();
     into_writer(&workload, &mut cbor_msg).unwrap();
 
@@ -567,7 +569,7 @@ pub fn provision_workload(keep: &Keep, workload: &Workload, sgx_prefetch: Option
 
         match sgx_prefetch {
             Some(sgx_pre) => {
-                let keychain = std::str::from_utf8(&sgx_pre.trusted_public_pck_chain).unwrap();
+                let keychain = &sgx_pre.trusted_public_pck_chain;
                 //let verify_res = sgx::attestation_types::verify::verify(&attestation_data, keychain, &sgx_pre.digest);
                 let verify_res = sgx::attestation_types::verify::verify(&pub_key_hash, keychain, &sgx_pre.digest);
                 //check that the output from the verify == the hash of the public key from the certificate
